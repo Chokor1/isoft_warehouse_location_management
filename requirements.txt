@@ -1,0 +1,1 @@
+# frappe & erpnext are installed via 'bench init' / 'bench get-app' (do NOT list here)

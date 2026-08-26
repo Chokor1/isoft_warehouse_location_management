@@ -1,0 +1,54 @@
+{
+ "actions": [],
+ "creation": "2026-08-25 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "warehouse",
+  "location",
+  "default_out"
+ ],
+ "fields": [
+  {
+   "columns": 4,
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "reqd": 1
+  },
+  {
+   "columns": 4,
+   "description": "Where this item is put away in that warehouse.",
+   "fieldname": "location",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Default Location",
+   "options": "Warehouse Location",
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "default": "1",
+   "description": "Outgoing stock is taken from here first, whenever it holds any.",
+   "fieldname": "default_out",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Pick from here"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-26 13:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Isoft Location Manager",
+ "name": "Item Default Location",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

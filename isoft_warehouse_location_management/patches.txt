@@ -1,0 +1,7 @@
+[pre_model_sync]
+isoft_warehouse_location_management.patches.rename_sections_to_locations
+
+[post_model_sync]
+isoft_warehouse_location_management.patches.rename_sections_per_warehouse
+isoft_warehouse_location_management.patches.backfill_location_fields
+isoft_warehouse_location_management.patches.drop_picking_role_user

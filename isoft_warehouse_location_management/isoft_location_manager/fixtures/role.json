@@ -1,0 +1,10 @@
+[
+ {
+  "doctype": "Role",
+  "name": "Location Manager",
+  "role_name": "Location Manager",
+  "desk_access": 1,
+  "two_factor_auth": 0,
+  "restrict_to_domain": null
+ }
+]

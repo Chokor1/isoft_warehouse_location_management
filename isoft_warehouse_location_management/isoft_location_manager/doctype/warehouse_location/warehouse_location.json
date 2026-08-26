@@ -1,0 +1,182 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "",
+ "creation": "2026-07-01 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "location_code",
+  "location_name",
+  "warehouse",
+  "zone",
+  "location_type",
+  "column_break_1",
+  "is_active",
+  "is_unassigned",
+  "is_default_receiving",
+  "pick_priority",
+  "putaway_rules_section",
+  "receives_item_group",
+  "max_qty",
+  "column_break_2",
+  "barcode",
+  "warehouse_prefix",
+  "description"
+ ],
+ "fields": [
+  {
+   "description": "Short code as printed on the racking, e.g. A1, RACK-03. Unique within its warehouse.",
+   "fieldname": "location_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Location Code",
+   "reqd": 1
+  },
+  {
+   "fieldname": "location_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Location Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "reqd": 1
+  },
+  {
+   "fieldname": "zone",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Zone",
+   "options": "Warehouse Zone",
+   "description": "Optional. Groups this location with others in the same part of the warehouse."
+  },
+  {
+   "default": "Storage",
+   "fieldname": "location_type",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Location Type",
+   "options": "Storage\nPick Face\nBulk\nStaging\nQuarantine\nUnassigned"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Active"
+  },
+  {
+   "description": "System location that holds everything in the warehouse not yet put away into a real location. Its quantity is derived from stock, never stored.",
+   "fieldname": "is_unassigned",
+   "fieldtype": "Check",
+   "label": "Is Unassigned Stock",
+   "read_only": 1
+  },
+  {
+   "description": "Incoming stock with no better match is put away here.",
+   "fieldname": "is_default_receiving",
+   "fieldtype": "Check",
+   "label": "Default Receiving Location"
+  },
+  {
+   "default": "10",
+   "description": "Lower is picked first. Use it to order the walk through the warehouse.",
+   "fieldname": "pick_priority",
+   "fieldtype": "Int",
+   "label": "Pick Priority"
+  },
+  {
+   "fieldname": "putaway_rules_section",
+   "fieldtype": "Section Break",
+   "label": "Put-away Rules"
+  },
+  {
+   "description": "Items in this group (or any group beneath it) are put away here by default.",
+   "fieldname": "receives_item_group",
+   "fieldtype": "Link",
+   "label": "Receives Item Group",
+   "options": "Item Group"
+  },
+  {
+   "description": "Total units this location can hold. Leave at 0 for unlimited.",
+   "fieldname": "max_qty",
+   "fieldtype": "Float",
+   "label": "Capacity (Qty)"
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Scan value for this location, if different from the code.",
+   "fieldname": "barcode",
+   "fieldtype": "Data",
+   "label": "Barcode"
+  },
+  {
+   "fieldname": "warehouse_prefix",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Warehouse Prefix",
+   "read_only": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-08-26 14:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Isoft Location Manager",
+ "name": "Warehouse Location",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Location Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "All"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "title_field": "location_name",
+ "track_changes": 1
+}

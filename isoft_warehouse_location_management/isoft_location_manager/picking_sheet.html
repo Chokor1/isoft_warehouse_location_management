@@ -1,0 +1,120 @@
+{%- set head = picking_sheet_header(doc) -%}
+{%- set lines = picking_sheet_lines(doc) -%}
+<div class="ip-sheet">
+	<div class="ip-sheet-top">
+		<div class="ip-sheet-brand">
+			{% if head.logo %}<img src="{{ head.logo }}" class="ip-sheet-logo">{% endif %}
+			<div>
+				<div class="ip-sheet-company">{{ head.company or "" }}</div>
+				<div class="ip-sheet-kind">{{ _("Picking Sheet") }}</div>
+			</div>
+		</div>
+		<table class="ip-sheet-meta">
+			<tr><th>{{ _("Document") }}</th><td>{{ doc.name }}</td></tr>
+			<tr><th>{{ _("Date") }}</th><td>{{ frappe.format(doc.posting_date or doc.transaction_date, {"fieldtype": "Date"}) }}</td></tr>
+			{% if doc.customer_name or doc.customer %}
+			<tr><th>{{ _("Customer") }}</th><td>{{ doc.customer_name or doc.customer }}</td></tr>
+			{% endif %}
+			<tr><th>{{ _("Warehouse") }}</th><td>{{ head.warehouses | join(", ") }}</td></tr>
+		</table>
+	</div>
+
+	<table class="ip-sheet-lines">
+		<thead>
+			<tr>
+				<th class="ip-c-idx">#</th>
+				<th class="ip-c-item">{{ _("Item") }}</th>
+				<th class="ip-c-from">{{ _("Take from") }}</th>
+				<th class="ip-c-qty">{{ _("Qty") }}</th>
+			</tr>
+		</thead>
+		<tbody>
+			{% for line in lines %}
+			<tr>
+				<td class="ip-c-idx">{{ line.idx }}</td>
+				<td class="ip-c-item">
+					<div class="ip-item-code">{{ line.item_code }}</div>
+					{% if line.item_name and line.item_name != line.item_code %}
+					<div class="ip-item-name">{{ line.item_name }}</div>
+					{% endif %}
+				</td>
+				<td class="ip-c-from">
+					{#- a quantity per location only says something when the line is divided;
+					    on a single-location line it is the line quantity repeated -#}
+					{%- set divided = (line.picks | length) > 1 or line.unplaced -%}
+					{% for p in line.picks %}
+					<div class="ip-pick{% if p.is_unassigned %} ip-pick-loose{% endif %}">
+						<span class="ip-pick-loc">{{ p.location }}</span>
+						{% if p.zone %}<span class="ip-pick-zone">{{ p.zone }}</span>{% endif %}
+						{% if divided %}
+						<span class="ip-pick-qty">{{ frappe.format(p.qty, {"fieldtype": "Float"}) }}</span>
+						{% endif %}
+					</div>
+					{% endfor %}
+					{% if line.unplaced %}
+					<div class="ip-pick ip-pick-none">
+						<span class="ip-pick-loc">{{ _("not on any location") }}</span>
+						<span class="ip-pick-qty">{{ frappe.format(line.unplaced, {"fieldtype": "Float"}) }}</span>
+					</div>
+					{% endif %}
+					{% if not line.picks and not line.unplaced %}
+					<div class="ip-pick ip-pick-none">{{ _("not set") }}</div>
+					{% endif %}
+				</td>
+				<td class="ip-c-qty">
+					<span class="ip-qty">{{ frappe.format(line.qty, {"fieldtype": "Float"}) }}</span>
+					<span class="ip-uom">{{ line.uom or "" }}</span>
+				</td>
+			</tr>
+			{% endfor %}
+		</tbody>
+	</table>
+
+	<div class="ip-sheet-foot">
+		<div class="ip-sheet-total">
+			{{ _("Lines") }}: <b>{{ lines | length }}</b>
+			&nbsp;&nbsp; {{ _("Total quantity") }}: <b>{{ frappe.format(head.total_qty, {"fieldtype": "Float"}) }}</b>
+		</div>
+		<div class="ip-sheet-signs">
+			<div class="ip-sign"><span></span>{{ _("Picked by") }}</div>
+			<div class="ip-sign"><span></span>{{ _("Checked by") }}</div>
+		</div>
+	</div>
+</div>
+
+<style>
+	.ip-sheet { font-size: 12px; color: #1f272e; }
+	.ip-sheet-top { display: flex; justify-content: space-between; align-items: flex-start;
+		border-bottom: 2px solid #1f272e; padding-bottom: 10px; margin-bottom: 14px; }
+	.ip-sheet-brand { display: flex; align-items: center; gap: 12px; }
+	.ip-sheet-logo { max-height: 52px; max-width: 180px; }
+	.ip-sheet-company { font-size: 15px; font-weight: 700; }
+	.ip-sheet-kind { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: #6b7a86; }
+	.ip-sheet-meta { font-size: 11.5px; border-collapse: collapse; }
+	.ip-sheet-meta th { text-align: left; font-weight: 500; color: #6b7a86; padding: 1px 12px 1px 0; white-space: nowrap; }
+	.ip-sheet-meta td { padding: 1px 0; font-weight: 600; }
+
+	.ip-sheet-lines { width: 100%; border-collapse: collapse; }
+	.ip-sheet-lines th { text-align: left; font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+		color: #6b7a86; border-bottom: 1px solid #c9d2d9; padding: 5px 6px; }
+	.ip-sheet-lines td { padding: 7px 6px; border-bottom: 1px solid #e6ebef; vertical-align: top; }
+	.ip-c-idx { width: 26px; color: #6b7a86; }
+	.ip-c-qty { width: 90px; text-align: right; white-space: nowrap; }
+	.ip-c-from { width: 42%; }
+	.ip-item-code { font-weight: 700; }
+	.ip-item-name { color: #6b7a86; font-size: 11px; margin-top: 1px; }
+	.ip-pick { display: flex; align-items: baseline; gap: 7px; line-height: 1.6; }
+	.ip-pick-loc { font-weight: 700; }
+	.ip-pick-zone { font-size: 10px; color: #6b7a86; text-transform: uppercase; letter-spacing: .04em; }
+	.ip-pick-qty { margin-left: auto; font-weight: 600; }
+	.ip-pick-loose .ip-pick-loc { font-weight: 500; font-style: italic; color: #6b7a86; }
+	.ip-pick-none .ip-pick-loc { font-weight: 500; font-style: italic; color: #a35b00; }
+	.ip-qty { font-size: 14px; font-weight: 700; }
+	.ip-uom { color: #6b7a86; font-size: 10.5px; margin-left: 3px; }
+
+	.ip-sheet-foot { margin-top: 16px; display: flex; justify-content: space-between; align-items: flex-end; }
+	.ip-sheet-total { font-size: 12px; }
+	.ip-sheet-signs { display: flex; gap: 34px; }
+	.ip-sign { font-size: 10.5px; color: #6b7a86; text-align: center; }
+	.ip-sign span { display: block; width: 150px; border-bottom: 1px solid #98a6b0; height: 34px; margin-bottom: 3px; }
+</style>

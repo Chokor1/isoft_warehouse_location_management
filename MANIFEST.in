@@ -1,0 +1,18 @@
+include MANIFEST.in
+include requirements.txt
+include *.json
+include *.md
+include *.py
+include *.txt
+recursive-include isoft_warehouse_location_management *.css
+recursive-include isoft_warehouse_location_management *.csv
+recursive-include isoft_warehouse_location_management *.html
+recursive-include isoft_warehouse_location_management *.ico
+recursive-include isoft_warehouse_location_management *.js
+recursive-include isoft_warehouse_location_management *.json
+recursive-include isoft_warehouse_location_management *.md
+recursive-include isoft_warehouse_location_management *.png
+recursive-include isoft_warehouse_location_management *.py
+recursive-include isoft_warehouse_location_management *.svg
+recursive-include isoft_warehouse_location_management *.txt
+recursive-exclude isoft_warehouse_location_management *.pyc

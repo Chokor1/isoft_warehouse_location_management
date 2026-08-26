@@ -1,0 +1,7 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.swp
+tags
+node_modules/
+*.egg-info/

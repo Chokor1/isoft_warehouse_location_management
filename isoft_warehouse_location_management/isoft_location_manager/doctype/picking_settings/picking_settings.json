@@ -1,0 +1,175 @@
+{
+ "actions": [],
+ "creation": "2026-07-01 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "module_section",
+  "enabled",
+  "disabled_note",
+  "integrations_column",
+  "enable_stock_entry",
+  "enable_delivery_note",
+  "enable_pos",
+  "general_section",
+  "default_warehouse",
+  "stock_validation",
+  "auto_resolve_locations",
+  "allow_pick_from_unassigned",
+  "require_location_on_out",
+  "enable_purchase",
+  "column_break_1",
+  "theme_color",
+  "enabled_section",
+  "access_note",
+  "enabled_warehouses"
+ ],
+ "fields": [
+  {
+   "fieldname": "module_section",
+   "fieldtype": "Section Break",
+   "label": "Module"
+  },
+  {
+   "default": "1",
+   "description": "Master switch. Turn this off and the app stops touching anything \u2014 no location fields are required, no stock document is validated or mirrored, and the picking screens go read-only.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enable Isoft Location Manager"
+  },
+  {
+   "depends_on": "eval:!doc.enabled",
+   "fieldname": "disabled_note",
+   "fieldtype": "HTML",
+   "label": "Disabled Note",
+   "options": "<div class='text-muted' style='padding:6px 0'>Location data is kept while the module is off, so switching it back on resumes exactly where you left it.</div>"
+  },
+  {
+   "fieldname": "integrations_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "depends_on": "enabled",
+   "description": "Capture and mirror locations on ERPNext Stock Entries.",
+   "fieldname": "enable_stock_entry",
+   "fieldtype": "Check",
+   "label": "Locations on Stock Entry"
+  },
+  {
+   "default": "1",
+   "depends_on": "enabled",
+   "description": "Deduct the picked location when stock leaves on a Delivery Note or a stock-updating Sales Invoice.",
+   "fieldname": "enable_delivery_note",
+   "fieldtype": "Check",
+   "label": "Locations on Delivery Note & Sales Invoice"
+  },
+  {
+   "default": "1",
+   "depends_on": "enabled",
+   "description": "Deduct locations for POS sales, and show the operator where each item is kept.",
+   "fieldname": "enable_pos",
+   "fieldtype": "Check",
+   "label": "Locations in POS Awesome"
+  },
+  {
+   "fieldname": "general_section",
+   "fieldtype": "Section Break",
+   "label": "General"
+  },
+  {
+   "fieldname": "default_warehouse",
+   "fieldtype": "Link",
+   "label": "Default Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "default": "Block",
+   "description": "How to handle a Location Stock Movement whose location totals would exceed the item's real ERPNext (Bin) quantity.",
+   "fieldname": "stock_validation",
+   "fieldtype": "Select",
+   "label": "Real-Stock Validation",
+   "options": "Block\nWarn\nOff"
+  },
+  {
+   "default": "1",
+   "description": "Fill a row's location in automatically when there is only one sensible answer.",
+   "fieldname": "auto_resolve_locations",
+   "fieldtype": "Check",
+   "label": "Resolve Locations Automatically"
+  },
+  {
+   "default": "1",
+   "description": "Offer the warehouse's Unassigned Stock location as a place to pick from. Turn off once everything is put away.",
+   "fieldname": "allow_pick_from_unassigned",
+   "fieldtype": "Check",
+   "label": "Allow Picking From Unassigned Stock"
+  },
+  {
+   "default": "1",
+   "fieldname": "require_location_on_out",
+   "fieldtype": "Check",
+   "label": "Require a Location When Stock Leaves",
+   "description": "Stock going out must say which location it came from. Stock coming in need not: anything not put away is simply unassigned stock."
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_purchase",
+   "fieldtype": "Check",
+   "label": "Locations on Purchase Receipt & Purchase Invoice",
+   "description": "Offer a put-away location on incoming purchases. Optional on every line \u2014 a line left blank lands in unassigned stock."
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Blue",
+   "fieldname": "theme_color",
+   "fieldtype": "Select",
+   "label": "Dashboard Theme",
+   "options": "Blue\nGreen\nPurple\nOrange\nSlate\nDark"
+  },
+  {
+   "description": "Only these warehouses (and their children) are used by Isoft Location Manager. Leave empty to enable all. Locations cannot be set on a Stock Entry for a warehouse that is not enabled.",
+   "fieldname": "enabled_section",
+   "fieldtype": "Section Break",
+   "label": "Enabled Warehouses"
+  },
+  {
+   "fieldname": "access_note",
+   "fieldtype": "HTML",
+   "label": "Access",
+   "options": "<div class='text-muted' style='padding:4px 0 2px'><b>Who can open this app</b> is the <i>Location Manager</i> role, assigned on the User like any other role. Everyone else keeps working normally: locations still appear, and can still be chosen, on the documents they already use.<br><b>What a manager sees</b> is their ERPNext <i>User Permissions</i> for Warehouse, narrowed to the warehouses enabled below. A user with no warehouse permission sees every enabled warehouse.</div>"
+  },
+  {
+   "fieldname": "enabled_warehouses",
+   "fieldtype": "Table",
+   "label": "Enabled Warehouses",
+   "options": "Picking Warehouse"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-08-26 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Isoft Location Manager",
+ "name": "Picking Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}
