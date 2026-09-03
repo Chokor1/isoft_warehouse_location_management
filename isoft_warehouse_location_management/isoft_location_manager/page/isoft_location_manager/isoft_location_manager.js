@@ -578,6 +578,68 @@ isoft_warehouse_location_management.App = class {
 	// re-shelving inside the same warehouse: lower a line and the difference goes back
 	// to unassigned stock, raise it and it comes from there. Nothing on this screen can
 	// invent or destroy stock.
+	// Deleting a location does not destroy stock — it stops a location claiming it, and
+	// the goods show up as unassigned again, which is exactly what unassigned stock is.
+	// The confirmation says so in those words, and says how much, because "are you sure"
+	// on its own tells nobody anything.
+	ask_delete_location(name) {
+		const esc = frappe.utils.escape_html;
+		this.api('location_delete_preview', { name: name }).then((info) => {
+			if (!info) return;
+			if (info.is_unassigned) {
+				frappe.msgprint({
+					title: __('Cannot delete'),
+					message: __('Unassigned stock is derived, not stored — there is nothing there to delete.'),
+					indicator: 'orange',
+				});
+				return;
+			}
+
+			const parts = [];
+			if (info.item_count) {
+				parts.push('<p>' + esc(__('{0} holds {1} of {2} item(s).',
+					[info.label, format_number(info.total_qty), info.item_count])) + '</p>');
+				parts.push('<p>' + esc(__(
+					'Deleting it returns all of that to unassigned stock. Nothing leaves the warehouse '
+					+ 'and no quantity changes — it simply stops being on a location, and can be put '
+					+ 'away again from the bar at the bottom of the board.')) + '</p>');
+				parts.push('<ul class="ip-del-items">' + (info.items || []).slice(0, 8).map((it) =>
+					'<li><b>' + esc(it.item_code) + '</b> '
+					+ esc(format_number(it.qty))
+					+ (it.item_name && it.item_name !== it.item_code
+						? ' <span class="ip-muted">' + esc(it.item_name) + '</span>' : '')
+					+ '</li>').join('')
+					+ (info.items.length > 8
+						? '<li class="ip-muted">' + esc(__('+ {0} more', [info.items.length - 8])) + '</li>'
+						: '')
+					+ '</ul>');
+			} else {
+				parts.push('<p>' + esc(__('{0} is empty.', [info.label])) + '</p>');
+			}
+			if (info.declared_for) {
+				parts.push('<p class="ip-del-warn">' + esc(__(
+					'{0} item(s) name it as where they are picked from. That will be cleared.',
+					[info.declared_for])) + '</p>');
+			}
+			parts.push('<p class="ip-muted">' + esc(__(
+				'The ledger keeps every movement that named this location.')) + '</p>');
+
+			frappe.confirm(parts.join(''), () => {
+				this.api('delete_location', { name: name }).then((r) => {
+					if (!r) return;
+					const back = (r.returned || []).length;
+					frappe.show_alert({
+						message: back
+							? __('{0} deleted — {1} item(s) back in unassigned stock', [info.label, back])
+							: __('{0} deleted', [info.label]),
+						indicator: 'green',
+					});
+					this.render_warehouse();
+				});
+			});
+		});
+	}
+
 	location_edit_dialog(sec) {
 		if (!sec) return;
 		const esc = frappe.utils.escape_html;
@@ -878,7 +940,9 @@ isoft_warehouse_location_management.App = class {
 						<div class="ip-tile-top">
 							<span class="ip-tile-code">${esc(s.location_code || s.location)}</span>
 							${manage ? `<button class="ip-tile-edit" data-sec="${esc(s.location)}"
-								title="${esc(__('Edit this location'))}"><i class="fa fa-pencil"></i></button>` : ''}
+								title="${esc(__('Edit this location'))}"><i class="fa fa-pencil"></i></button>
+								<button class="ip-tile-del" data-sec="${esc(s.location)}"
+								title="${esc(__('Delete this location'))}"><i class="fa fa-trash-o"></i></button>` : ''}
 						</div>
 						${s.location_name && s.location_name !== s.location_code
 							? `<div class="ip-tile-name">${esc(s.location_name)}</div>` : ''}
@@ -897,6 +961,10 @@ isoft_warehouse_location_management.App = class {
 			e.stopPropagation();
 			const name = $(e.currentTarget).data('sec');
 			this.location_edit_dialog((this.allSecs || []).find((x) => x.location === name));
+		});
+		$wrap.find('.ip-tile-del').on('click', (e) => {
+			e.stopPropagation();
+			this.ask_delete_location($(e.currentTarget).data('sec'));
 		});
 		if (manage) {
 			this.bind_zone_dnd($wrap);
@@ -1096,7 +1164,8 @@ isoft_warehouse_location_management.App = class {
 					<div class="ip-col-tools">
 						<span class="ip-col-count">${count}</span>
 						${this.ctx.can_manage
-							? `<button class="ip-col-edit" data-sec="${esc(s.location)}" title="${esc(__('Edit this location'))}"><i class="fa fa-pencil"></i></button>`
+							? `<button class="ip-col-edit" data-sec="${esc(s.location)}" title="${esc(__('Edit this location'))}"><i class="fa fa-pencil"></i></button>
+							   <button class="ip-col-del" data-sec="${esc(s.location)}" title="${esc(__('Delete this location'))}"><i class="fa fa-trash-o"></i></button>`
 							: ''}
 					</div>
 				</div>
@@ -1137,6 +1206,10 @@ isoft_warehouse_location_management.App = class {
 			e.stopPropagation();
 			const name = $(e.currentTarget).data('sec');
 			this.location_edit_dialog(secs.find((x) => x.location === name));
+		});
+		$wrap.find('.ip-col-del').on('click', (e) => {
+			e.stopPropagation();
+			this.ask_delete_location($(e.currentTarget).data('sec'));
 		});
 		if (movable) this.bind_board($wrap);
 	}

@@ -1402,6 +1402,100 @@ def delete_zone(name):
 
 
 @frappe.whitelist()
+def location_delete_preview(name):
+	"""What deleting this location would mean, before anyone confirms it."""
+	_require_access()
+	loc = frappe.db.get_value(
+		"Warehouse Location", name, ["name", "location_code", "warehouse", "is_unassigned"], as_dict=True
+	)
+	if not loc:
+		frappe.throw(_("Location {0} does not exist.").format(name))
+
+	rows = frappe.get_all(
+		"Location Stock",
+		filters={"location": name, "qty": [">", 0]},
+		fields=["item_code", "item_name", "qty"],
+		order_by="item_code",
+		limit_page_length=0,
+	)
+	return {
+		"location": loc.name,
+		"label": loc.location_code or loc.name,
+		"warehouse": loc.warehouse,
+		"is_unassigned": cint(loc.is_unassigned),
+		"items": rows,
+		"item_count": len(rows),
+		"total_qty": sum(flt(r.qty) for r in rows),
+		"declared_for": frappe.db.count("Item Default Location", {"location": name}),
+	}
+
+
+@frappe.whitelist()
+def delete_location(name):
+	"""Remove a location, returning anything it holds to unassigned stock.
+
+	Nothing is destroyed. The stock stays in the warehouse; it simply stops being
+	claimed by a location, which is what unassigned stock *is* — the remainder the
+	partition does not account for. So the movement is recorded the same way any other
+	re-shelving is, and the totals do not move.
+	"""
+	_require_preparer()
+	loc = frappe.db.get_value(
+		"Warehouse Location", name, ["name", "warehouse", "is_unassigned"], as_dict=True
+	)
+	if not loc:
+		frappe.throw(_("Location {0} does not exist.").format(name))
+	if cint(loc.is_unassigned):
+		frappe.throw(
+			_("Unassigned stock is derived, not stored — there is nothing there to delete.")
+		)
+	if loc.warehouse not in (_scope(None) or {loc.warehouse}):
+		frappe.throw(_("Warehouse {0} is not in your scope.").format(loc.warehouse))
+
+	# empty it first, through the same path the board uses, so the ledger shows where
+	# the stock went rather than it simply vanishing from a location one day
+	emptied = []
+	for r in frappe.get_all(
+		"Location Stock", filters={"location": name, "qty": [">", 0]},
+		fields=["item_code", "qty"], limit_page_length=0,
+	):
+		move_between_locations(loc.warehouse, r.item_code, name, None, flt(r.qty))
+		emptied.append({"item_code": r.item_code, "qty": flt(r.qty)})
+
+	# the zero-balance rows are bookkeeping for a location that is about to stop existing
+	for row in frappe.get_all("Location Stock", filters={"location": name}, pluck="name"):
+		frappe.delete_doc("Location Stock", row, ignore_permissions=True, force=True)
+
+	# an item that named this as its pick location no longer has one. Cleared through the
+	# app's own path so the Item document is saved properly rather than edited underneath
+	# it, which would leave a stale child table in the document cache.
+	declared = frappe.get_all(
+		"Item Default Location",
+		filters={"location": name, "parenttype": "Item"},
+		fields=["parent"], limit_page_length=0,
+	)
+	for parent in {r.parent for r in declared}:
+		set_item_default_location(parent, loc.warehouse, name, "out", 0)
+
+	# `force` skips only the link check, and the ledger points here on purpose: every
+	# movement that ever touched this location names it, including the ones just made
+	# emptying it. History is not rewritten when a location is retired — those entries
+	# keep the name they were written with, and the ledger still reads correctly.
+	# `on_trash` still runs, so the guard against deleting unassigned stock stays live.
+	frappe.delete_doc("Warehouse Location", name, force=1, ignore_permissions=True)
+
+	from isoft_warehouse_location_management.isoft_location_manager.api import log_activity
+
+	# "Location" is one of the log's fixed categories; the action carries the detail
+	log_activity(
+		"Location",
+		_("Deleted {0} — {1} item(s) returned to unassigned stock").format(name, len(emptied)),
+		warehouse=loc.warehouse,
+	)
+	return {"ok": True, "returned": emptied}
+
+
+@frappe.whitelist()
 def set_location_zone(locations, zone=None):
 	"""File one or more locations under a zone (or unfile them with an empty zone).
 

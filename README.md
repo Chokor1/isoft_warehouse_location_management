@@ -191,6 +191,24 @@ Layout a location tile can also be dragged into another zone. The two gestures d
 collide — carrying an item card, a zone stops offering itself as a target. Both views group by zone —
 but only once at least one zone exists, so a warehouse that ignores them sees no change.
 
+## Deleting a location
+
+The trash icon beside the pencil, in either view. It confirms first, and the
+confirmation says what will happen rather than just asking: how many items the location
+holds, how much, and that all of it returns to unassigned stock.
+
+**Nothing is destroyed.** The goods stay in the warehouse; they simply stop being claimed
+by a location, which is what unassigned stock *is* — the remainder the partition does not
+account for. So the warehouse total does not move, and the stock can be put away again
+from the bar at the bottom of the board. The emptying is recorded as an ordinary
+re-shelving, so the ledger shows where it went.
+
+The ledger keeps every movement that ever named the location. History is not rewritten
+when a location is retired.
+
+Unassigned stock itself cannot be deleted — it is derived, so there is nothing there to
+delete. An item that named the location as its pick location has that cleared.
+
 ## Editing a location
 
 The pencil on a column opens what that location **holds**, not what it is called: every
