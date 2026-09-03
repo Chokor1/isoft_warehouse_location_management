@@ -1402,6 +1402,54 @@ def delete_zone(name):
 
 
 @frappe.whitelist()
+def remove_item_from_location(location, item_code):
+	"""Take an item off a location entirely.
+
+	Setting a quantity to zero returns the stock but leaves the row behind, which is how
+	a location remembers that an item belongs there. Sometimes that memory is the thing
+	to get rid of — the item was put on the wrong shelf, or it is not kept there any
+	more. This returns whatever is held to unassigned stock and then removes the row, so
+	the location stops listing the item at all.
+
+	Nothing is destroyed either way: the goods stay in the warehouse.
+	"""
+	_require_preparer()
+	loc = frappe.db.get_value(
+		"Warehouse Location", location, ["name", "warehouse", "is_unassigned"], as_dict=True
+	)
+	if not loc:
+		frappe.throw(_("Location {0} does not exist.").format(location))
+	if cint(loc.is_unassigned):
+		frappe.throw(
+			_("Unassigned stock is whatever is left over — put the item on a location to change it.")
+		)
+	if loc.warehouse not in (_scope(None) or {loc.warehouse}):
+		frappe.throw(_("Warehouse {0} is not in your scope.").format(loc.warehouse))
+
+	row = frappe.db.get_value(
+		"Location Stock", {"location": location, "item_code": item_code}, ["name", "qty"], as_dict=True
+	)
+	if not row:
+		return {"ok": True, "returned": 0}
+
+	returned = flt(row.qty)
+	if returned > TOL:
+		# through the board's own path, so the ledger says where it went
+		move_between_locations(loc.warehouse, item_code, location, None, returned)
+
+	# re-read: the movement above zeroes the row rather than removing it
+	name = frappe.db.get_value("Location Stock", {"location": location, "item_code": item_code}, "name")
+	if name:
+		frappe.delete_doc("Location Stock", name, ignore_permissions=True, force=True)
+
+	# it can hardly be the pick location for an item it no longer holds
+	if frappe.db.exists("Item Default Location", {"location": location, "parent": item_code}):
+		set_item_default_location(item_code, loc.warehouse, location, "out", 0)
+
+	return {"ok": True, "returned": returned}
+
+
+@frappe.whitelist()
 def location_delete_preview(name):
 	"""What deleting this location would mean, before anyone confirms it."""
 	_require_access()

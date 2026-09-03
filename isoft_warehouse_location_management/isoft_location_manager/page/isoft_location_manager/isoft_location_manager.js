@@ -675,8 +675,13 @@ isoft_warehouse_location_management.App = class {
 								: __('Take stock of this item from here first'))}">
 							<i class="fa fa-sign-out"></i> ${esc(__('Pick from here'))}</button>
 					</div>
-					<button class="ip-loc-return" type="button"
-						${flt(it.qty) <= 0 ? 'disabled' : ''}>${esc(__('All to unassigned'))}</button>
+					<div class="ip-loc-rowacts">
+						<button class="ip-loc-return" type="button"
+							${flt(it.qty) <= 0 ? 'disabled' : ''}>${esc(__('All to unassigned'))}</button>
+						<button class="ip-loc-drop" type="button"
+							title="${esc(__('Take this item off the location altogether'))}">
+							<i class="fa fa-trash-o"></i></button>
+					</div>
 				</td>
 			</tr>`).join('');
 
@@ -731,6 +736,38 @@ isoft_warehouse_location_management.App = class {
 				$row.find('.ip-loc-qty').val(0);
 			});
 
+			// Zeroing a quantity returns the stock but keeps the row — that is how a
+			// location remembers an item belongs there. This is for when the memory is
+			// the thing to be rid of: the item goes off the location entirely.
+			$body.find('.ip-loc-drop').on('click', (e) => {
+				const $row = $(e.currentTarget).closest('tr');
+				const item = $row.data('item');
+				const held = flt($row.find('.ip-loc-qty').data('was'));
+				const drop = () => this.api('remove_item_from_location', {
+					location: name, item_code: item,
+				}).then((r) => {
+					if (!r) return;
+					frappe.show_alert({
+						message: flt(r.returned) > 0
+							? __('{0} taken off {1} — {2} back in unassigned stock',
+								[item, contents.location.location_code || name, format_number(r.returned)])
+							: __('{0} taken off {1}', [item, contents.location.location_code || name]),
+						indicator: 'green',
+					});
+					reload();
+				});
+
+				if (held > 0) {
+					frappe.confirm(
+						__('{0} holds {1} of {2}. Taking it off returns that to unassigned stock — nothing leaves the warehouse.',
+							[contents.location.location_code || name, format_number(held), item]),
+						drop
+					);
+				} else {
+					drop();
+				}
+			});
+
 			// Only picking has a declared location. Where something is put away is decided
 			// at the shelf by whoever is holding it, so there is nothing to declare.
 			$body.find('.ip-loc-def').on('click', (e) => {
@@ -743,13 +780,7 @@ isoft_warehouse_location_management.App = class {
 					location: name, direction: dir, on: on,
 				}).then(() => {
 					// the role belongs to one location at a time, so re-read rather than guess
-					this.api('get_location_contents', { location: name }).then((r) => {
-						if (!r) return;
-						const keep = collect();
-						contents = r;
-						render();
-						keep.forEach((c) => $body.find(`tr[data-item="${c.item_code}"] .ip-loc-qty`).val(c.qty));
-					});
+					reload();
 					frappe.show_alert({
 						message: on ? __('Picked from here first') : __('Pick location cleared'),
 						indicator: 'blue',
@@ -757,6 +788,16 @@ isoft_warehouse_location_management.App = class {
 				});
 			});
 		};
+
+		// Re-read the location and redraw, keeping any quantities already typed in. Used
+		// whenever something outside this table changes what the table is showing.
+		const reload = () => this.api('get_location_contents', { location: name }).then((r) => {
+			if (!r) return;
+			const keep = collect();
+			contents = r;
+			render();
+			keep.forEach((c) => $body.find(`tr[data-item="${c.item_code}"] .ip-loc-qty`).val(c.qty));
+		});
 
 		const collect = () => $body.find('tbody tr').map((_i, tr) => {
 			const $tr = $(tr);

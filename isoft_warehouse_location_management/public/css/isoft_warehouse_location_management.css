@@ -463,6 +463,14 @@
 .ip-del-items { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; }
 .ip-del-items .ip-muted { color: #94a3b8; }
 .ip-del-warn { color: #b45309; }
+
+/* per-item actions inside the location editor */
+.ip-loc-rowacts { display: flex; align-items: center; gap: 6px; }
+.ip-loc-rowacts .ip-loc-return { flex: 1; }
+.ip-loc-drop { flex: none; border: 1px solid var(--ip-line, #e2e8f0); background: #fff;
+  color: #cbd5e1; border-radius: 5px; padding: 3px 7px; cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s; }
+.ip-loc-drop:hover { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
 .ip-tile-name { font-size: 11px; color: #64748b; margin-top: 1px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ip-tile-stats { display: flex; align-items: baseline; gap: 6px; margin-top: 6px; }

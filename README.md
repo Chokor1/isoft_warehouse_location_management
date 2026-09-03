@@ -231,6 +231,19 @@ from an empty shelf.
 
 There is deliberately no put-away equivalent. See below.
 
+Each line has two ways out, and they are not the same thing:
+
+- **All to unassigned** sets the quantity to zero. The stock goes back to unassigned, but
+  the line stays — that is how a location remembers an item belongs there.
+- the **trash** takes the item off the location altogether. The stock goes back the same
+  way, and then the line goes too, so the location stops listing it. For when the memory
+  is the thing to be rid of: the item was put on the wrong shelf, or is not kept there
+  any more.
+
+Either way nothing is destroyed and the warehouse total does not move. Removing an item
+also clears it as that location's pick location, since a location can hardly be where an
+item is picked from once it no longer holds it.
+
 The location's own description and active flag live at the bottom of the same dialog.
 
 
