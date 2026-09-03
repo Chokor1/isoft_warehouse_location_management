@@ -1343,9 +1343,17 @@ isoft_warehouse_location_management.App = class {
 				from: null,                       // out of unassigned: a put-away, not a transfer
 				warehouse: $card.data('wh'),
 			}));
-			// get out of the way of the shelves the card is being aimed at
+			// Get out of the way of the locations the card is being aimed at — but not
+			// until the next tick.
+			//
+			// The card being dragged lives inside this dock, and tucking it applies a
+			// transform that shifts the card most of the way off screen. Doing that
+			// synchronously inside `dragstart` moves the drag source out from under the
+			// pointer before the browser has taken its drag image, and Chrome responds by
+			// abandoning the drag: no dragover, no drop, nothing. Dragging between two
+			// locations was unaffected precisely because those cards are not in the dock.
 			$scroll.find('.ip-draggable')
-				.on('dragstart', () => $dock.addClass('is-tucked'))
+				.on('dragstart', () => setTimeout(() => $dock.addClass('is-tucked'), 0))
 				.on('dragend', () => $dock.removeClass('is-tucked'));
 
 			$scroll.find('.ip-dock-put').on('click', (e) => {
