@@ -898,11 +898,46 @@ isoft_warehouse_location_management.App = class {
 			const name = $(e.currentTarget).data('sec');
 			this.location_edit_dialog((this.allSecs || []).find((x) => x.location === name));
 		});
-		if (manage) this.bind_zone_dnd($wrap);
+		if (manage) {
+			this.bind_zone_dnd($wrap);
+			this.bind_tile_drops($wrap);
+		}
 	}
 
 	// Dragging a location tile onto another zone re-files it. Filing is not a stock
 	// movement — the goods do not move, only the way the warehouse is described.
+	// Layout view carries two different drags, and they must not be confused:
+	//   a location tile onto a zone   — re-file the location (bind_zone_dnd)
+	//   an item card onto a tile      — put that stock away there (this)
+	// The first is a local `dragging`; the second is `this._drag`, set by the shared
+	// drag source, which is what the unassigned dock hands over. Checking the right one
+	// is the whole difference between the two gestures.
+	bind_tile_drops($wrap) {
+		const droppable = ($tile) =>
+			this._drag
+			&& $tile.data('wh') === this._drag.warehouse
+			&& $tile.data('location') !== this._drag.from;
+
+		$wrap.find('.ip-tile').on('dragover', (e) => {
+			const $tile = $(e.currentTarget);
+			if (!droppable($tile)) return;
+			e.preventDefault();
+			e.stopPropagation();          // the zone underneath must not claim it too
+			$tile.addClass('is-drop-target');
+		});
+		$wrap.find('.ip-tile').on('dragleave', (e) => $(e.currentTarget).removeClass('is-drop-target'));
+		$wrap.find('.ip-tile').on('drop', (e) => {
+			const $tile = $(e.currentTarget);
+			$tile.removeClass('is-drop-target');
+			if (!droppable($tile)) return;
+			e.preventDefault();
+			e.stopPropagation();
+			this.ask_move(this._drag, $tile.data('location'));
+			this._drag = null;
+			$('.ip-col, .ip-tile').removeClass('is-drop-target can-drop');
+		});
+	}
+
 	bind_zone_dnd($wrap) {
 		let dragging = null;
 		$wrap.find('.ip-tile-move').on('dragstart', (e) => {
@@ -923,6 +958,7 @@ isoft_warehouse_location_management.App = class {
 		});
 		$wrap.find('.ip-zone').on('dragover', (e) => {
 			if (!dragging || $(e.currentTarget).data('wh') !== dragging.warehouse) return;
+			if (this._drag) return;      // an item card is being carried, not a location
 			e.preventDefault();
 			$(e.currentTarget).addClass('is-drop-target');
 		});
@@ -1123,7 +1159,8 @@ isoft_warehouse_location_management.App = class {
 			// light up everywhere it can land, rather than waiting to be hovered — a card
 			// dragged out of the unassigned bar should not have to be guessed at
 			const d = this._drag;
-			$('.ip-col').each(function () {
+			// both views can receive it: a column in Contents, a location tile in Layout
+			$('.ip-col, .ip-tile').each(function () {
 				const $c = $(this);
 				if ($c.data('wh') === d.warehouse && $c.data('location') !== d.from) {
 					$c.addClass('can-drop');
@@ -1132,7 +1169,7 @@ isoft_warehouse_location_management.App = class {
 		});
 		$scope.find('.ip-draggable').on('dragend', (e) => {
 			$(e.currentTarget).removeClass('is-dragging');
-			$('.ip-col').removeClass('is-drop-target can-drop');
+			$('.ip-col, .ip-tile').removeClass('is-drop-target can-drop');
 		});
 	}
 

@@ -185,8 +185,10 @@ location tile onto another zone in the Layout view. Filing is not a stock moveme
 | **Contents** (default) | what every location holds, item by item — the working view |
 | **Layout** | the zones and locations themselves: units, item count, fill against capacity, type. No item lists. |
 
-Layout is the map you use when you are organising the place rather than working it, and
-it is where a location is dragged from one zone to another. Both views group by zone —
+Layout is the map you use when you are organising the place rather than working it. Both
+views take a drop from the unassigned bar, so stock can be put away from either; in
+Layout a location tile can also be dragged into another zone. The two gestures do not
+collide — carrying an item card, a zone stops offering itself as a target. Both views group by zone —
 but only once at least one zone exists, so a warehouse that ignores them sees no change.
 
 ## Editing a location
