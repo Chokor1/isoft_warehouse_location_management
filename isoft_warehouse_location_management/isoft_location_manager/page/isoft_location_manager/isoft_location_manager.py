@@ -1592,17 +1592,10 @@ def set_location_zone(locations, zone=None):
 
 
 @frappe.whitelist()
-def transfer_template(kind):
+def transfer_read(content, filename=None):
 	from isoft_warehouse_location_management.isoft_location_manager import transfer
 
-	return transfer.template(kind)
-
-
-@frappe.whitelist()
-def transfer_export(kind, warehouse=None):
-	from isoft_warehouse_location_management.isoft_location_manager import transfer
-
-	return transfer.export_rows(kind, warehouse)
+	return transfer.read_upload(content, filename)
 
 
 @frappe.whitelist()

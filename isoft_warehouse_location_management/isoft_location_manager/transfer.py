@@ -28,6 +28,33 @@ COLUMNS = {
 	"stock": ["warehouse", "location_code", "item_code", "qty"],
 }
 
+# What each column is for, in the words someone filling the sheet in would use. This is
+# not decoration: a spreadsheet that has to be explained in a separate email is a
+# spreadsheet that comes back wrong.
+NOTES = {
+	"warehouse": "The exact warehouse name, as ERPNext spells it. Must be a leaf warehouse.",
+	"zone_code": "Short code, unique inside the warehouse. Upper-cased automatically.",
+	"zone_name": "What people call it. Left blank, the code is used.",
+	"sequence": "Order the zones appear in. Lower comes first. Blank means 0.",
+	"description": "Optional. A note for whoever reads the record later.",
+	"location_code": "Short code, unique inside the warehouse — the label on the rack.",
+	"location_name": "What people call it. Left blank, the code is used.",
+	"zone": "The zone code this location sits in. It must already exist — import zones first.",
+	"location_type": "One of: " + ", ".join(("Storage", "Pick Face", "Bulk", "Staging", "Quarantine"))
+	+ ". Blank means Storage.",
+	"max_qty": "How much this location can hold. Blank or 0 means no limit.",
+	"barcode": "Optional. Scanned to identify the location.",
+	"item_code": "The exact item code.",
+	"qty": "How much of this item sits on this location. The difference comes from, or goes "
+	"back to, unassigned stock — nothing leaves the warehouse.",
+}
+
+WIDTHS = {
+	"warehouse": 32, "zone_code": 14, "zone_name": 22, "sequence": 10, "description": 40,
+	"location_code": 16, "location_name": 24, "zone": 14, "location_type": 16,
+	"max_qty": 12, "barcode": 16, "item_code": 22, "qty": 12,
+}
+
 REQUIRED = {
 	"zones": ["warehouse", "zone_code"],
 	"locations": ["warehouse", "location_code"],
@@ -440,3 +467,219 @@ def apply(kind, rows):
 			done["updated"] += 1
 
 	return {"ok": True, "kind": kind, "rows": len(plan), **done}
+
+
+# ======================================================================
+# workbooks
+# ======================================================================
+# A sheet somebody has to be told how to fill in is a sheet that comes back wrong, so the
+# workbook explains itself: the header says what is required, the columns are wide enough
+# to read, the cells that have a fixed set of answers offer them as a dropdown, and a
+# second sheet spells out every column in words.
+
+HEADER_FILL = "FF0F766E"
+REQUIRED_FILL = "FFE6FFFA"
+
+
+def _sheet_title(kind):
+	return {"zones": "Zones", "locations": "Locations", "stock": "Stock on locations"}[kind]
+
+
+def _workbook(kind, rows, with_sample=False):
+	from openpyxl import Workbook
+	from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+	from openpyxl.utils import get_column_letter
+	from openpyxl.worksheet.datavalidation import DataValidation
+
+	columns = COLUMNS[kind]
+	required = REQUIRED[kind]
+
+	wb = Workbook()
+	ws = wb.active
+	ws.title = _sheet_title(kind)
+
+	head_font = Font(bold=True, color="FFFFFFFF", size=11)
+	head_fill = PatternFill("solid", fgColor=HEADER_FILL)
+	thin = Side(style="thin", color="FFD8E0E6")
+
+	for c, col in enumerate(columns, start=1):
+		cell = ws.cell(row=1, column=c)
+		# the header carries the rule, so nobody has to look it up
+		cell.value = col + (" *" if col in required else "")
+		cell.font = head_font
+		cell.fill = head_fill
+		cell.alignment = Alignment(vertical="center", horizontal="left")
+		cell.border = Border(bottom=thin)
+		ws.column_dimensions[get_column_letter(c)].width = WIDTHS.get(col, 18)
+	ws.row_dimensions[1].height = 22
+	ws.freeze_panes = "A2"
+	ws.auto_filter.ref = "A1:%s1" % get_column_letter(len(columns))
+
+	start = 2
+	if with_sample:
+		for c, value in enumerate(SAMPLE[kind], start=1):
+			cell = ws.cell(row=2, column=c, value=value)
+			cell.font = Font(italic=True, color="FF8D99A6")
+		start = 3
+
+	for r, row in enumerate(rows or [], start=start):
+		for c, value in enumerate(row, start=1):
+			ws.cell(row=r, column=c, value=value)
+
+	# quantities and capacities are numbers, and should look like numbers
+	for c, col in enumerate(columns, start=1):
+		if col in ("qty", "max_qty", "sequence"):
+			for r in range(2, ws.max_row + 1):
+				ws.cell(row=r, column=c).number_format = "#,##0.###"
+
+	# the columns with a fixed set of answers offer them, rather than being guessed at
+	limit = max(ws.max_row + 200, 500)
+	if "location_type" in columns:
+		c = get_column_letter(columns.index("location_type") + 1)
+		dv = DataValidation(
+			type="list", formula1='"%s"' % ",".join(LOCATION_TYPES), allow_blank=True,
+			showErrorMessage=True, errorTitle="Not a location type",
+			error="Choose one of: " + ", ".join(LOCATION_TYPES),
+		)
+		ws.add_data_validation(dv)
+		dv.add("%s2:%s%d" % (c, c, limit))
+	for col in ("qty", "max_qty"):
+		if col in columns:
+			c = get_column_letter(columns.index(col) + 1)
+			dv = DataValidation(
+				type="decimal", operator="greaterThanOrEqual", formula1=0, allow_blank=(col != "qty"),
+				showErrorMessage=True, errorTitle="Not a quantity",
+				error="This must be a number, and cannot be negative.",
+			)
+			ws.add_data_validation(dv)
+			dv.add("%s2:%s%d" % (c, c, limit))
+
+	_help_sheet(wb, kind)
+	return wb
+
+
+def _help_sheet(wb, kind):
+	from openpyxl.styles import Alignment, Font, PatternFill
+
+	ws = wb.create_sheet("How to fill this in")
+	ws.column_dimensions["A"].width = 20
+	ws.column_dimensions["B"].width = 12
+	ws.column_dimensions["C"].width = 86
+
+	ws["A1"] = _sheet_title(kind)
+	ws["A1"].font = Font(bold=True, size=14)
+	ws["A2"] = {
+		"zones": "The parts a warehouse is divided into. Import these before locations, "
+		"because a location can name one.",
+		"locations": "The shelves, racks and bins themselves. A zone named here must already exist.",
+		"stock": "What sits on each location. The difference comes from, or goes back to, "
+		"unassigned stock — nothing leaves the warehouse.",
+	}[kind]
+	ws["A2"].alignment = Alignment(wrap_text=True, vertical="top")
+	ws.merge_cells("A2:C2")
+	ws.row_dimensions[2].height = 30
+
+	for c, title in enumerate(("Column", "Required", "What it means"), start=1):
+		cell = ws.cell(row=4, column=c, value=title)
+		cell.font = Font(bold=True, color="FFFFFFFF")
+		cell.fill = PatternFill("solid", fgColor=HEADER_FILL)
+
+	for r, col in enumerate(COLUMNS[kind], start=5):
+		ws.cell(row=r, column=1, value=col).font = Font(bold=True)
+		ws.cell(row=r, column=2, value="yes" if col in REQUIRED[kind] else "")
+		cell = ws.cell(row=r, column=3, value=NOTES.get(col, ""))
+		cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+	last = 5 + len(COLUMNS[kind]) + 1
+	ws.cell(row=last, column=1, value="Before you import").font = Font(bold=True)
+	ws.cell(
+		row=last + 1, column=1,
+		value="The whole file is checked before anything is written. If any row is wrong, "
+		"nothing is imported at all — fix the rows it lists and send the same file again.",
+	).alignment = Alignment(wrap_text=True, vertical="top")
+	ws.merge_cells(start_row=last + 1, start_column=1, end_row=last + 1, end_column=3)
+	ws.row_dimensions[last + 1].height = 30
+	return ws
+
+
+def _respond(wb, filename):
+	from io import BytesIO
+
+	buf = BytesIO()
+	wb.save(buf)
+	frappe.response["filename"] = filename
+	frappe.response["filecontent"] = buf.getvalue()
+	frappe.response["type"] = "binary"
+
+
+@frappe.whitelist()
+def download_template(kind):
+	"""An empty workbook with the right columns, one example row, and a help sheet."""
+	_guard()
+	kind = _kind(kind)
+	_respond(_workbook(kind, [], with_sample=True), "ilm-%s-template.xlsx" % kind)
+
+
+@frappe.whitelist()
+def download_export(kind, warehouse=None):
+	"""What is there now, in exactly the workbook the importer accepts."""
+	_guard()
+	kind = _kind(kind)
+	data = export_rows(kind, warehouse)
+	_respond(_workbook(kind, data["rows"]), "ilm-%s.xlsx" % kind)
+
+
+@frappe.whitelist()
+def read_upload(content, filename=None):
+	"""Turn an uploaded workbook into rows, keyed by the header names.
+
+	Accepts .xlsx and .csv, because somebody will always send a .csv, and refusing it
+	teaches them nothing. The header is matched loosely — case, spaces and the `*` the
+	template puts on required columns are all ignored — so a sheet that has been through
+	someone's hands still lands.
+	"""
+	_guard()
+	import base64
+
+	raw = content
+	if isinstance(raw, str):
+		if "," in raw[:64] and raw[:5] == "data:":
+			raw = raw.split(",", 1)[1]
+		raw = base64.b64decode(raw)
+
+	name = (filename or "").lower()
+	if name.endswith(".csv"):
+		text = raw.decode("utf-8-sig", errors="replace")
+		import csv
+		import io
+
+		table = [r for r in csv.reader(io.StringIO(text))]
+	else:
+		from frappe.utils.xlsxutils import read_xlsx_file_from_attached_file
+
+		table = read_xlsx_file_from_attached_file(fcontent=raw)
+
+	table = [r for r in (table or []) if any(cstr(c).strip() for c in r)]
+	if not table:
+		frappe.throw(_("That file has no rows in it."))
+
+	def key(h):
+		return cstr(h).strip().lower().replace("*", "").replace(" ", "_").strip("_")
+
+	header = [key(h) for h in table[0]]
+	known = set(COLUMNS["zones"]) | set(COLUMNS["locations"]) | set(COLUMNS["stock"])
+	if not any(h in known for h in header):
+		frappe.throw(
+			_("The first row of that sheet does not look like column names. Expected some of: {0}").format(
+				", ".join(sorted(known))
+			)
+		)
+
+	rows = []
+	for line in table[1:]:
+		row = {}
+		for i, h in enumerate(header):
+			if h:
+				row[h] = line[i] if i < len(line) else ""
+		rows.append(row)
+	return {"rows": rows, "count": len(rows), "columns": header}

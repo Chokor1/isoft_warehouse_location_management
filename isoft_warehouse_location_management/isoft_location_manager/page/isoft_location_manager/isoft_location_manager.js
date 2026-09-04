@@ -484,9 +484,8 @@ isoft_warehouse_location_management.App = class {
 		const $w = d.get_field('editor').$wrapper;
 		$w.html(`
 			<div class="ip-loc-tools">
-				<div class="ip-muted" style="font-size:12px;margin-right:auto">${__('Add one or more locations, or import a CSV.')}</div>
-				<button type="button" class="btn btn-xs btn-default ip-loc-tpl"><i class="fa fa-download"></i> ${__('Template')}</button>
-				<label class="btn btn-xs btn-default" style="margin:0;cursor:pointer"><input type="file" accept=".csv,.txt" class="ip-loc-file" hidden><i class="fa fa-upload"></i> ${__('Import CSV')}</label>
+				<div class="ip-muted" style="font-size:12px;margin-right:auto">${__(
+					'Add a few locations here. For a whole warehouse — with zones, types and capacities — use Import / Export.')}</div>
 			</div>
 			<div class="ip-loc-head"><span class="h-code">${__('Location Code')}</span><span class="h-desc">${__('Description')}</span><span class="h-del"></span></div>
 			<div class="ip-loc-rows"></div>
@@ -504,23 +503,6 @@ isoft_warehouse_location_management.App = class {
 		};
 
 		$w.find('.ip-add-sec').on('click', () => addRow());
-		$w.find('.ip-loc-tpl').on('click', () =>
-			this._download_csv('locations-template.csv', ['location_code', 'description'], ['A-01', 'Aisle A - Shelf 1']));
-		$w.find('.ip-loc-file').on('change', async (e) => {
-			const text = await this._read_file(e.currentTarget);
-			e.currentTarget.value = '';
-			if (!text) return;
-			const parsed = this._parse_csv(text)
-				.map((o) => ({ code: o.location_code || o.code || '', desc: o.description || '' }))
-				.filter((o) => o.code);
-			if (!parsed.length) { frappe.msgprint(__('No location codes found in the file.')); return; }
-			// drop an initial empty row, then append imported ones
-			const $first = $w.find('.ip-loc-row').first();
-			if ($first.length && !($first.find('.sc-code').val() || '').trim()) $first.remove();
-			parsed.forEach((o) => addRow(o.code, o.desc));
-			frappe.show_alert({ message: __('{0} row(s) imported — review and Create', [parsed.length]), indicator: 'blue' });
-		});
-
 		addRow();
 		d.show();
 	}
@@ -532,48 +514,7 @@ isoft_warehouse_location_management.App = class {
 	// re-shelving inside the same warehouse: lower a line and the difference goes back
 	// to unassigned stock, raise it and it comes from there. Nothing on this screen can
 	// invent or destroy stock.
-	// ---- CSV helpers (client-side) ----
-	/** `sample` is one illustrative row for a template; `rows` is real data to export. */
-	_download_csv(filename, headers, sample, rows) {
-		const enc = (v) => (/[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v));
-		const lines = [headers.join(',')];
-		if (sample) lines.push(sample.map(enc).join(','));
-		(rows || []).forEach((r) => lines.push(r.map(enc).join(',')));
-		const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
-		URL.revokeObjectURL(url);
-	}
 
-	_parse_csv(text) {
-		text = (text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-		const rows = []; let field = '', row = [], inq = false;
-		for (let i = 0; i < text.length; i++) {
-			const c = text[i];
-			if (inq) {
-				if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inq = false; }
-				else field += c;
-			} else if (c === '"') inq = true;
-			else if (c === ',') { row.push(field); field = ''; }
-			else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
-			else field += c;
-		}
-		if (field.length || row.length) { row.push(field); rows.push(row); }
-		const header = (rows.shift() || []).map((h) => h.trim().toLowerCase().replace(/\s+/g, '_'));
-		return rows.filter((r) => r.some((c) => (c || '').trim() !== '')).map((r) => {
-			const o = {}; header.forEach((h, i) => (o[h] = (r[i] || '').trim())); return o;
-		});
-	}
-
-	_read_file(input) {
-		return new Promise((res, rej) => {
-			const f = input && input.files && input.files[0];
-			if (!f) { res(null); return; }
-			const fr = new FileReader();
-			fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsText(f);
-		});
-	}
 
 	// ------------------------------------------------------------------
 	// What one location holds
@@ -870,7 +811,6 @@ isoft_warehouse_location_management.App = class {
 		d.show();
 	}
 
-	// ---- CSV helpers (client-side) ----
 
 	// ---- which locations are on screen, and in what shape ----
 	// Zone grouping is the same in both views: it is how the warehouse is described,
@@ -1673,14 +1613,14 @@ isoft_warehouse_location_management.App = class {
 			<div class="ip-t-cards">
 				<section class="ip-t-card">
 					<h4>${esc(__('Export'))}</h4>
-					<p>${esc(__('What is there now, in exactly the shape the importer accepts. Edit it and send it back.'))}</p>
-					<button class="ip-btn ip-t-export"><i class="fa fa-download"></i> ${esc(__('Export {0}', [kind.label]))}</button>
-					<button class="ip-btn ip-t-template"><i class="fa fa-file-o"></i> ${esc(__('Empty template'))}</button>
+					<p>${esc(__('An Excel workbook of what is there now, in exactly the shape the importer accepts. Edit it and send it back.'))}</p>
+					<button class="ip-btn ip-t-export"><i class="fa fa-file-excel-o"></i> ${esc(__('Export {0}', [kind.label]))}</button>
+					<button class="ip-btn ip-t-template"><i class="fa fa-file-excel-o"></i> ${esc(__('Blank template'))}</button>
 				</section>
 				<section class="ip-t-card">
 					<h4>${esc(__('Import'))}</h4>
-					<p>${esc(__('A CSV with a header row. Nothing is written until the whole file has been checked.'))}</p>
-					<input type="file" class="ip-t-file" accept=".csv,text/csv">
+					<p>${esc(__('An Excel workbook — the template, or an export you have edited. Nothing is written until the whole file has been checked.'))}</p>
+					<input type="file" class="ip-t-file" accept=".xlsx,.xls,.csv">
 					<div class="ip-t-file-name ip-muted">${esc(__('no file chosen'))}</div>
 				</section>
 			</div>
@@ -1693,40 +1633,48 @@ isoft_warehouse_location_management.App = class {
 			this.render_transfer();
 		});
 
-		$w.find('.ip-t-template').on('click', () => {
-			this.api('transfer_template', { kind: this.tKind }).then((t) => {
-				if (!t) return;
-				this._download_csv('ilm-' + this.tKind + '-template.csv', t.columns, t.sample);
-			});
-		});
+		// A workbook is a file, not JSON — it comes back through the normal download
+		// endpoint rather than being rebuilt in the browser.
+		const download = (method, args) => {
+			const q = Object.keys(args)
+				.filter((k) => args[k] !== null && args[k] !== undefined && args[k] !== '')
+				.map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(args[k]))
+				.join('&');
+			window.open('/api/method/' + method + (q ? '?' + q : ''), '_blank');
+		};
 
-		$w.find('.ip-t-export').on('click', () => {
-			this.api('transfer_export', { kind: this.tKind, warehouse: this.leaf_scope() || null })
-				.then((d) => {
-					if (!d) return;
-					if (!d.rows.length) {
-						frappe.show_alert({ message: __('Nothing to export yet'), indicator: 'orange' });
-						return;
-					}
-					this._download_csv('ilm-' + this.tKind + '.csv', d.columns, null, d.rows);
-					frappe.show_alert({ message: __('{0} row(s) exported', [d.rows.length]), indicator: 'green' });
-				});
-		});
+		$w.find('.ip-t-template').on('click', () => download(
+			'isoft_warehouse_location_management.isoft_location_manager.transfer.download_template',
+			{ kind: this.tKind }));
+
+		$w.find('.ip-t-export').on('click', () => download(
+			'isoft_warehouse_location_management.isoft_location_manager.transfer.download_export',
+			{ kind: this.tKind, warehouse: this.leaf_scope() || '' }));
 
 		$w.find('.ip-t-file').on('change', (e) => {
 			const input = e.currentTarget;
-			$w.find('.ip-t-file-name').text((input.files && input.files[0] && input.files[0].name) || __('no file chosen'));
+			const file = input.files && input.files[0];
+			$w.find('.ip-t-file-name').text((file && file.name) || __('no file chosen'));
+			if (!file) { $res.empty(); return; }
 			$res.html(`<div class="ip-loading"><div class="ip-spin"></div></div>`);
-			this._read_file(input).then((text) => {
-				if (!text) { $res.empty(); return; }
-				const rows = this._parse_csv(text);
-				if (!rows.length) {
-					$res.html(`<div class="ip-t-bad">${esc(__('That file has a header but no rows.'))}</div>`);
-					return;
-				}
-				this.api('transfer_check', { kind: this.tKind, rows: JSON.stringify(rows) })
-					.then((r) => { if (r) this.render_transfer_result($res, r, rows); });
-			});
+
+			// the workbook is read on the server, where openpyxl already lives
+			const reader = new FileReader();
+			reader.onload = () => {
+				this.api('transfer_read', { content: reader.result, filename: file.name })
+					.then((d) => {
+						if (!d) { $res.empty(); return; }
+						if (!d.count) {
+							$res.html(`<div class="ip-t-bad">${esc(
+								__('That sheet has a header but no rows.'))}</div>`);
+							return;
+						}
+						this.api('transfer_check', { kind: this.tKind, rows: JSON.stringify(d.rows) })
+							.then((r) => { if (r) this.render_transfer_result($res, r, d.rows); });
+					});
+			};
+			reader.onerror = () => $res.html(`<div class="ip-t-bad">${esc(__('That file could not be read.'))}</div>`);
+			reader.readAsDataURL(file);
 		});
 	}
 

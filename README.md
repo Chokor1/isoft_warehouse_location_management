@@ -344,8 +344,8 @@ with three places named under it.
 
 ## Import and export
 
-`Import / Export` takes a warehouse in and out as CSV, in the three layers a warehouse is
-actually described in — and in that order:
+`Import / Export` takes a warehouse in and out as **Excel**, in the three layers a
+warehouse is actually described in — and in that order:
 
 | | |
 |---|---|
@@ -368,10 +368,20 @@ mention.
 Importing stock is not a stock movement: the difference comes from, or goes back to,
 unassigned stock, exactly as the board does it, and the ledger records it.
 
-**Export** returns what is there now in exactly the shape the importer accepts — edit it
-and send it back. Unassigned stock is never exported, because it is derived; re-importing
-it would turn a remainder into a claim. **Empty template** gives the columns with one
-sample row.
+**Export** returns what is there now in exactly the workbook the importer accepts — edit
+it and send it back. Unassigned stock is never exported, because it is derived;
+re-importing it would turn a remainder into a claim.
+
+The workbook explains itself, because a sheet that has to be explained in a separate email
+is a sheet that comes back wrong. Required columns are marked `*` in the header, the
+header row is frozen and filterable, columns are wide enough to read, quantities are
+formatted as numbers, **Location Type** is a dropdown of the real options and quantities
+refuse a negative — and a second sheet, *How to fill this in*, says what every column
+means and what happens when a row is wrong.
+
+A `.csv` is accepted too. Somebody will always send one, and refusing it teaches them
+nothing. Headers are matched loosely — case, spaces and the `*` are all ignored — so a
+sheet that has been through someone's hands still lands.
 
 ## The unassigned dock
 
