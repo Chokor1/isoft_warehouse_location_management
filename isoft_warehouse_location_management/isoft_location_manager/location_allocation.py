@@ -240,9 +240,18 @@ def allocate(warehouse, item_code, qty, direction="out"):
 def require_settled(row, warehouse, idx=None, direction="out"):
 	"""Stock going out has to say where it came from.
 
+	This is about *quantity*, not about choice: every unit of the line must be traceable
+	to somewhere. How many locations hold the item is irrelevant — a line off one, or off
+	five, passes equally. What is refused is a line the locations between them cannot
+	cover.
+
+	Whether it ever bites is decided by `allow_pick_from_unassigned`: while that is on,
+	the unassigned remainder counts as somewhere, so a line can almost always be
+	accounted for. Switch it off and this becomes the rule that stops goods leaving
+	before anyone has put them away.
+
 	Stock coming *in* is different: a line nobody put away is simply unassigned stock,
-	which is a true and useful answer. But stock leaving a location the ledger cannot
-	name is stock the ledger has lost track of, so that is refused.
+	which is a true and useful answer.
 	"""
 	from isoft_warehouse_location_management.isoft_location_manager.api import is_warehouse_enabled, setting
 

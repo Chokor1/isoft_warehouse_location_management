@@ -258,8 +258,13 @@ line will be taken from.
 An allocation that no longer adds up to its line (because the quantity was edited after
 it was settled) is not a decision to respect — it is a leftover, and it is recomputed.
 
-**Stock going out must say where it came from.** `Picking Settings → Require a Location
-When Stock Leaves` refuses an outbound line the ledger cannot account for.
+**Stock going out must say where it came from.** `Settings → Require a location when stock
+leaves` refuses a line unless every unit of it is traceable to a location. It is about
+quantity, not choice: how many locations hold the item makes no difference — one or five,
+both pass. Whether it ever bites is decided by *Allow picking from unassigned stock*: while
+that is on the remainder counts as somewhere, so almost any line can be accounted for;
+switch it off and this becomes the rule that stops goods leaving before anyone has put them
+away.
 
 **Arrivals can be barred from being placed at all.** `Picking Settings → Choose a Location
 When Stock Arrives`, switched off, means goods always land in unassigned stock however the

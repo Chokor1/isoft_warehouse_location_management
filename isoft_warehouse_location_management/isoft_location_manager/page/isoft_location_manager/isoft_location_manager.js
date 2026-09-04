@@ -1905,9 +1905,9 @@ isoft_warehouse_location_management.App = class {
 						['allow_location_on_in', __('Let arrivals be put away on the document'),
 						 __('Switched off, arriving stock always lands in unassigned — whatever the document says — for a location manager to distribute here afterwards. The location column disappears from receipts and the Stock Entry target side.')],
 						['allow_pick_from_unassigned', __('Allow picking from unassigned stock'),
-						 __('Switched off, stock has to be put away before it can be sold or issued.')],
+						 __('Unassigned stock counts as somewhere goods can be taken from. Switched off, stock has to be put away before it can be sold or issued.')],
 						['require_location_on_out', __('Require a location when stock leaves'),
-						 __('Refuses an outgoing line the ledger cannot account for.')],
+						 __('Every unit of an outgoing line has to be traceable to a location, or the document is refused. It does not matter how many locations the item is in — one or five, both pass. While picking from unassigned is allowed this rarely bites, because unassigned counts; it is the switch above that decides whether it does.')],
 					], s)}
 				</div>
 
