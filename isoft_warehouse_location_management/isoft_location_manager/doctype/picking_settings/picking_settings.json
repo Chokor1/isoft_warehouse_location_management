@@ -18,6 +18,7 @@
   "auto_resolve_locations",
   "allow_pick_from_unassigned",
   "require_location_on_out",
+  "allow_location_on_in",
   "enable_purchase",
   "column_break_1",
   "theme_color",
@@ -115,6 +116,13 @@
   },
   {
    "default": "1",
+   "fieldname": "allow_location_on_in",
+   "fieldtype": "Check",
+   "label": "Choose a Location When Stock Arrives",
+   "description": "Let whoever receives goods put them straight onto a location. Switch this off and arriving stock always lands in unassigned stock, for the location manager to distribute afterwards from the board."
+  },
+  {
+   "default": "1",
    "fieldname": "enable_purchase",
    "fieldtype": "Check",
    "label": "Locations on Purchase Receipt & Purchase Invoice",
@@ -153,7 +161,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-26 12:00:00.000000",
+ "modified": "2026-08-26 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Isoft Location Manager",
  "name": "Picking Settings",

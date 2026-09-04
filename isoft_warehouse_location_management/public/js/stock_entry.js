@@ -30,7 +30,14 @@ frappe.ui.form.on('Stock Entry', {
 			// custom_from_location stays hidden on purpose — "Picked From Location" says the
 			// same thing and copes with a line that came off several places
 			isoft_warehouse_location_management.toggle_grid_locations(frm, 'items',
-				['custom_to_location', 'custom_location_allocation'], 'stock_entry');
+				['custom_location_allocation'], 'stock_entry');
+			// the target side disappears when arrivals may not be placed
+			if (typeof isoft_warehouse_location_management.status !== 'function'
+				|| typeof isoft_warehouse_location_management.set_grid_fields_hidden !== 'function') return;
+			isoft_warehouse_location_management.status().then(function (s) {
+				isoft_warehouse_location_management.set_grid_fields_hidden(frm, 'items', ['custom_to_location'],
+					!(s.enabled && s.stock_entry && s.location_on_in));
+			});
 		}
 		if (isoft_warehouse_location_management.mount_picking_sheet) isoft_warehouse_location_management.mount_picking_sheet(frm);
 		if (!isoft_warehouse_location_management.mount_grid_split) return;

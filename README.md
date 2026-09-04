@@ -261,6 +261,12 @@ it was settled) is not a decision to respect — it is a leftover, and it is rec
 **Stock going out must say where it came from.** `Picking Settings → Require a Location
 When Stock Leaves` refuses an outbound line the ledger cannot account for.
 
+**Arrivals can be barred from being placed at all.** `Picking Settings → Choose a Location
+When Stock Arrives`, switched off, means goods always land in unassigned stock however the
+document was filled in — for the location manager to distribute afterwards from the board.
+Nothing is refused: the receiver did nothing wrong, and the location column simply
+disappears from Purchase Receipt, Purchase Invoice and the Stock Entry target side.
+
 **Stock coming in is always chosen by hand, and never required.** Nothing fills a
 put-away location automatically — not on a Purchase Receipt, not on the target side of a
 Stock Entry, not on a return. Where something goes is a decision somebody makes standing
@@ -335,6 +341,37 @@ enabled warehouse does.
 It is built from the same allocation the ledger is built from, so the sheet and the stock
 movement can never disagree. A line that comes off three locations is still one line,
 with three places named under it.
+
+## Import and export
+
+`Import / Export` takes a warehouse in and out as CSV, in the three layers a warehouse is
+actually described in — and in that order:
+
+| | |
+|---|---|
+| **Zones** | the parts a warehouse is divided into. First, because a location can name one |
+| **Locations** | the shelves, racks and bins. A zone named here must already exist |
+| **Stock on locations** | what sits where |
+
+**A file is checked in full before any of it is written.** Every problem is reported with
+its row number and what was actually in the cell — *"row 5: capacity is not a number
+(ten)"*, *"row 4: 02 - Loja Viana has no zone NOPE — import the zones first"*. A file with
+one bad row lands nowhere: a half-imported warehouse is worse than an unimported one,
+because re-running it would double the quantities and nobody could tell what had already
+landed.
+
+Quantities are read the way spreadsheets write them, so `1 234,50` and `1,234.50` both
+mean the same number, and `ten` is a complaint rather than a zero. Stock cannot be placed
+beyond what the warehouse holds, counting what is already on locations the file does not
+mention.
+
+Importing stock is not a stock movement: the difference comes from, or goes back to,
+unassigned stock, exactly as the board does it, and the ledger records it.
+
+**Export** returns what is there now in exactly the shape the importer accepts — edit it
+and send it back. Unassigned stock is never exported, because it is derived; re-importing
+it would turn a remainder into a claim. **Empty template** gives the columns with one
+sample row.
 
 ## The unassigned dock
 

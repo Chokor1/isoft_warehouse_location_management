@@ -30,6 +30,7 @@ SETTING_DEFAULTS = {
 	"allow_pick_from_unassigned": True,
 	"require_location_on_out": True,
 	"enable_purchase": True,
+	"allow_location_on_in": True,
 }
 
 
@@ -75,6 +76,7 @@ def module_status():
 		"delivery_note": is_enabled("delivery_note"),
 		"pos": is_enabled("pos"),
 		"purchase": is_enabled("purchase"),
+		"location_on_in": bool(setting("allow_location_on_in")),
 	}
 
 

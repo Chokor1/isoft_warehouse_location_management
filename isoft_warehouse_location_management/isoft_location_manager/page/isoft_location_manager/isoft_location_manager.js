@@ -120,6 +120,7 @@ isoft_warehouse_location_management.App = class {
 			{ key: 'dashboard', label: 'Dashboard', icon: 'fa-tachometer' },
 			{ key: 'warehouse', label: 'Locations', icon: 'fa-th-large' },
 			{ key: 'ledger', label: 'Ledger', icon: 'fa-list' },
+			{ key: 'transfer', label: 'Import / Export', icon: 'fa-exchange' },
 		];
 		if (this.ctx.is_admin) tabs.push({ key: 'settings', label: 'Settings', icon: 'fa-cog' });
 		const tabs_html = tabs
@@ -173,6 +174,7 @@ isoft_warehouse_location_management.App = class {
 		if (view === 'dashboard') this.dashMode === 'check' ? this.render_check_panel() : this.render_dashboard();
 		else if (view === 'warehouse') this.render_warehouse();
 		else if (view === 'ledger') this.render_ledger();
+		else if (view === 'transfer') this.render_transfer();
 		else if (view === 'settings') this.render_settings();
 	}
 
@@ -531,10 +533,12 @@ isoft_warehouse_location_management.App = class {
 	// to unassigned stock, raise it and it comes from there. Nothing on this screen can
 	// invent or destroy stock.
 	// ---- CSV helpers (client-side) ----
-	_download_csv(filename, headers, sample) {
+	/** `sample` is one illustrative row for a template; `rows` is real data to export. */
+	_download_csv(filename, headers, sample, rows) {
 		const enc = (v) => (/[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v));
 		const lines = [headers.join(',')];
 		if (sample) lines.push(sample.map(enc).join(','));
+		(rows || []).forEach((r) => lines.push(r.map(enc).join(',')));
 		const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
@@ -867,45 +871,6 @@ isoft_warehouse_location_management.App = class {
 	}
 
 	// ---- CSV helpers (client-side) ----
-	_download_csv(filename, headers, sample) {
-		const enc = (v) => (/[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v));
-		const lines = [headers.join(',')];
-		if (sample) lines.push(sample.map(enc).join(','));
-		const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
-		URL.revokeObjectURL(url);
-	}
-
-	_parse_csv(text) {
-		text = (text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-		const rows = []; let field = '', row = [], inq = false;
-		for (let i = 0; i < text.length; i++) {
-			const c = text[i];
-			if (inq) {
-				if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inq = false; }
-				else field += c;
-			} else if (c === '"') inq = true;
-			else if (c === ',') { row.push(field); field = ''; }
-			else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
-			else field += c;
-		}
-		if (field.length || row.length) { row.push(field); rows.push(row); }
-		const header = (rows.shift() || []).map((h) => h.trim().toLowerCase().replace(/\s+/g, '_'));
-		return rows.filter((r) => r.some((c) => (c || '').trim() !== '')).map((r) => {
-			const o = {}; header.forEach((h, i) => (o[h] = (r[i] || '').trim())); return o;
-		});
-	}
-
-	_read_file(input) {
-		return new Promise((res, rej) => {
-			const f = input && input.files && input.files[0];
-			if (!f) { res(null); return; }
-			const fr = new FileReader();
-			fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsText(f);
-		});
-	}
 
 	// ---- which locations are on screen, and in what shape ----
 	// Zone grouping is the same in both views: it is how the warehouse is described,
@@ -1670,6 +1635,138 @@ isoft_warehouse_location_management.App = class {
 			},
 		});
 		d.show();
+	}
+
+	// ------------------------------------------------------------------ IMPORT / EXPORT
+	// A warehouse is described in three layers, and they are imported in that order:
+	// the zones it is divided into, the locations inside them, then what sits on each
+	// location. A file is checked in full before any of it is written — a half-imported
+	// warehouse is worse than an unimported one, because re-running the file would
+	// double the quantities and nobody could tell what had already landed.
+	render_transfer() {
+		const esc = frappe.utils.escape_html;
+		const KINDS = [
+			{ key: 'zones', label: __('Zones'),
+			  hint: __('The parts a warehouse is divided into. Import these first — a location can name one.') },
+			{ key: 'locations', label: __('Locations'),
+			  hint: __('The shelves, racks and bins themselves. A zone named here must already exist.') },
+			{ key: 'stock', label: __('Stock on locations'),
+			  hint: __('What sits where. The difference comes from, or goes back to, unassigned stock — nothing leaves the warehouse.') },
+		];
+		this.tKind = this.tKind || 'zones';
+
+		this.$content.html(`
+			<div class="ip-toolbar">
+				<div class="ip-viewtoggle">
+					${KINDS.map((k) => `<button class="ip-vt ip-tkind${k.key === this.tKind ? ' on' : ''}"
+						data-kind="${k.key}">${esc(k.label)}</button>`).join('')}
+				</div>
+				<span class="ip-scope-chip">${esc(this.scope || __('All warehouses'))}</span>
+			</div>
+			<div class="ip-transfer"></div>`);
+
+		const $w = this.$content.find('.ip-transfer');
+		const kind = KINDS.find((k) => k.key === this.tKind);
+
+		$w.html(`
+			<p class="ip-t-hint">${esc(kind.hint)}</p>
+			<div class="ip-t-cards">
+				<section class="ip-t-card">
+					<h4>${esc(__('Export'))}</h4>
+					<p>${esc(__('What is there now, in exactly the shape the importer accepts. Edit it and send it back.'))}</p>
+					<button class="ip-btn ip-t-export"><i class="fa fa-download"></i> ${esc(__('Export {0}', [kind.label]))}</button>
+					<button class="ip-btn ip-t-template"><i class="fa fa-file-o"></i> ${esc(__('Empty template'))}</button>
+				</section>
+				<section class="ip-t-card">
+					<h4>${esc(__('Import'))}</h4>
+					<p>${esc(__('A CSV with a header row. Nothing is written until the whole file has been checked.'))}</p>
+					<input type="file" class="ip-t-file" accept=".csv,text/csv">
+					<div class="ip-t-file-name ip-muted">${esc(__('no file chosen'))}</div>
+				</section>
+			</div>
+			<div class="ip-t-result"></div>`);
+
+		const $res = $w.find('.ip-t-result');
+
+		$w.find('.ip-tkind').on('click', (e) => {
+			this.tKind = $(e.currentTarget).data('kind');
+			this.render_transfer();
+		});
+
+		$w.find('.ip-t-template').on('click', () => {
+			this.api('transfer_template', { kind: this.tKind }).then((t) => {
+				if (!t) return;
+				this._download_csv('ilm-' + this.tKind + '-template.csv', t.columns, t.sample);
+			});
+		});
+
+		$w.find('.ip-t-export').on('click', () => {
+			this.api('transfer_export', { kind: this.tKind, warehouse: this.leaf_scope() || null })
+				.then((d) => {
+					if (!d) return;
+					if (!d.rows.length) {
+						frappe.show_alert({ message: __('Nothing to export yet'), indicator: 'orange' });
+						return;
+					}
+					this._download_csv('ilm-' + this.tKind + '.csv', d.columns, null, d.rows);
+					frappe.show_alert({ message: __('{0} row(s) exported', [d.rows.length]), indicator: 'green' });
+				});
+		});
+
+		$w.find('.ip-t-file').on('change', (e) => {
+			const input = e.currentTarget;
+			$w.find('.ip-t-file-name').text((input.files && input.files[0] && input.files[0].name) || __('no file chosen'));
+			$res.html(`<div class="ip-loading"><div class="ip-spin"></div></div>`);
+			this._read_file(input).then((text) => {
+				if (!text) { $res.empty(); return; }
+				const rows = this._parse_csv(text);
+				if (!rows.length) {
+					$res.html(`<div class="ip-t-bad">${esc(__('That file has a header but no rows.'))}</div>`);
+					return;
+				}
+				this.api('transfer_check', { kind: this.tKind, rows: JSON.stringify(rows) })
+					.then((r) => { if (r) this.render_transfer_result($res, r, rows); });
+			});
+		});
+	}
+
+	render_transfer_result($res, r, rows) {
+		const esc = frappe.utils.escape_html;
+		const counts = [];
+		if (r.summary.create) counts.push(__('{0} to create', [r.summary.create]));
+		if (r.summary.update) counts.push(__('{0} to update', [r.summary.update]));
+		if (r.summary.set) counts.push(__('{0} to set', [r.summary.set]));
+
+		$res.html(`
+			<div class="ip-t-report ${r.ok ? 'is-ok' : 'is-bad'}">
+				<div class="ip-t-report-head">
+					<b>${esc(r.ok
+						? __('{0} row(s) read, nothing wrong', [r.rows])
+						: __('{0} problem(s) — nothing will be imported until they are fixed', [r.problems.length]))}</b>
+					${counts.length ? `<span class="ip-muted">${esc(counts.join(' · '))}</span>` : ''}
+				</div>
+				${r.problems.length ? `<ul class="ip-t-problems">${
+					r.problems.slice(0, 40).map((p) => `<li>${esc(p)}</li>`).join('')}${
+					r.problems.length > 40 ? `<li>${esc(__('… and {0} more', [r.problems.length - 40]))}</li>` : ''
+				}</ul>` : ''}
+				${r.ok && r.rows ? `<button class="ip-btn ip-btn-primary ip-t-apply">
+					<i class="fa fa-check"></i> ${esc(__('Import {0} row(s)', [r.rows]))}</button>` : ''}
+			</div>`);
+
+		$res.find('.ip-t-apply').on('click', () => {
+			$res.find('.ip-t-apply').prop('disabled', true);
+			this.api('transfer_apply', { kind: r.kind, rows: JSON.stringify(rows) }).then((d) => {
+				if (!d) { $res.find('.ip-t-apply').prop('disabled', false); return; }
+				const bits = [];
+				if (d.created) bits.push(__('{0} created', [d.created]));
+				if (d.updated) bits.push(__('{0} updated', [d.updated]));
+				if (d.placed) bits.push(__('{0} put away', [format_number(d.placed)]));
+				if (d.returned) bits.push(__('{0} returned to unassigned', [format_number(d.returned)]));
+				frappe.show_alert({ message: bits.join(' · ') || __('Done'), indicator: 'green' });
+				$res.html(`<div class="ip-t-report is-ok"><div class="ip-t-report-head"><b>${
+					esc(__('Imported.'))}</b> <span class="ip-muted">${esc(bits.join(' · '))}</span></div></div>`);
+			});
+		});
 	}
 
 	// ------------------------------------------------------------------ LOGS

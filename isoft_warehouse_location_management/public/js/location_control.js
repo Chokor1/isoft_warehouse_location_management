@@ -57,6 +57,21 @@ isoft_warehouse_location_management.enabled = function (feature) {
 
 // Hide the location columns of a grid entirely when the module (or this integration)
 // is off, so a switched-off module asks nothing of anyone.
+/** Show or hide grid columns outright. No feature lookup, no guessing. */
+isoft_warehouse_location_management.set_grid_fields_hidden = function (frm, table_field, fields, hidden) {
+	const grid = frm.fields_dict[table_field] && frm.fields_dict[table_field].grid;
+	if (!grid) return;
+	fields.forEach((f) => {
+		try {
+			grid.update_docfield_property(f, 'hidden', hidden ? 1 : 0);
+			grid.update_docfield_property(f, 'reqd', 0);
+		} catch (e) {
+			/* field not on this form */
+		}
+	});
+	frm.refresh_field(table_field);
+};
+
 isoft_warehouse_location_management.toggle_grid_locations = function (frm, table_field, location_fields, feature) {
 	return isoft_warehouse_location_management.enabled(feature).then((on) => {
 		const grid = frm.fields_dict[table_field] && frm.fields_dict[table_field].grid;

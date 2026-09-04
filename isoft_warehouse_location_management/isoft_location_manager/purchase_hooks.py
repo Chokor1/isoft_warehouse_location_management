@@ -17,7 +17,11 @@ from frappe import _
 from frappe.utils import flt
 
 from isoft_warehouse_location_management.isoft_location_manager import location_allocation as alloc
-from isoft_warehouse_location_management.isoft_location_manager.api import is_enabled, is_warehouse_enabled
+from isoft_warehouse_location_management.isoft_location_manager.api import (
+	is_enabled,
+	is_warehouse_enabled,
+	setting,
+)
 from isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_location.warehouse_location import (
 	unassigned_location_names,
 )
@@ -43,6 +47,14 @@ def _returning(doc):
 def validate(doc, method=None):
 	if not is_enabled("purchase") or not _moves_stock(doc):
 		return
+
+	# When arriving stock may not be placed, any location on the row is cleared rather
+	# than refused: the receiver did nothing wrong, the warehouse simply distributes
+	# later. The goods land in unassigned stock, which is exactly where they are.
+	if not setting("allow_location_on_in"):
+		for row in doc.items:
+			if row.get(LOCATION_FIELD):
+				row.set(LOCATION_FIELD, None)
 
 	for row in doc.items:
 		location = row.get(LOCATION_FIELD)

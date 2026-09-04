@@ -15,7 +15,11 @@ from frappe import _
 from frappe.utils import flt
 
 from isoft_warehouse_location_management.isoft_location_manager import location_allocation as alloc
-from isoft_warehouse_location_management.isoft_location_manager.api import is_enabled, is_warehouse_enabled
+from isoft_warehouse_location_management.isoft_location_manager.api import (
+	is_enabled,
+	is_warehouse_enabled,
+	setting,
+)
 from isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_location.warehouse_location import (
 	unassigned_location_names,
 )
@@ -33,6 +37,12 @@ def validate(doc, method=None):
 	"""
 	if not is_enabled("stock_entry"):
 		return
+
+	# arriving stock may be barred from going straight onto a location
+	if not setting("allow_location_on_in"):
+		for row in doc.items:
+			if row.get("custom_to_location"):
+				row.set("custom_to_location", None)
 
 	# order matters: clean the row, settle it, then check what was settled
 	for row in doc.items:

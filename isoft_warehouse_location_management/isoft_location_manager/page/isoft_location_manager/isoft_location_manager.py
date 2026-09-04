@@ -1582,3 +1582,38 @@ def set_location_zone(locations, zone=None):
 		moved += 1
 
 	return {"ok": not problems, "moved": moved, "problems": problems}
+
+
+# ----------------------------------------------------------------------
+# Import / export
+# ----------------------------------------------------------------------
+# Thin pass-throughs so the page can reach the transfer module the same way it reaches
+# everything else. The work, and every check, lives in transfer.py.
+
+
+@frappe.whitelist()
+def transfer_template(kind):
+	from isoft_warehouse_location_management.isoft_location_manager import transfer
+
+	return transfer.template(kind)
+
+
+@frappe.whitelist()
+def transfer_export(kind, warehouse=None):
+	from isoft_warehouse_location_management.isoft_location_manager import transfer
+
+	return transfer.export_rows(kind, warehouse)
+
+
+@frappe.whitelist()
+def transfer_check(kind, rows):
+	from isoft_warehouse_location_management.isoft_location_manager import transfer
+
+	return transfer.check(kind, rows)
+
+
+@frappe.whitelist()
+def transfer_apply(kind, rows):
+	from isoft_warehouse_location_management.isoft_location_manager import transfer
+
+	return transfer.apply(kind, rows)

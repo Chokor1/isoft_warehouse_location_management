@@ -28,7 +28,13 @@ IP_PURCHASE_DOCTYPES.forEach(function (dt) {
 
 		refresh: function (frm) {
 			if (!window.isoft_warehouse_location_management || !isoft_warehouse_location_management.toggle_grid_locations) return;
-			isoft_warehouse_location_management.toggle_grid_locations(frm, 'items', ['custom_to_location'], 'purchase');
+			// with arrivals barred from being placed, the column would only mislead
+			if (typeof isoft_warehouse_location_management.status !== 'function'
+				|| typeof isoft_warehouse_location_management.set_grid_fields_hidden !== 'function') return;
+			isoft_warehouse_location_management.status().then(function (s) {
+				isoft_warehouse_location_management.set_grid_fields_hidden(frm, 'items', ['custom_to_location'],
+					!(s.enabled && s.purchase && s.location_on_in));
+			});
 		},
 	});
 });
