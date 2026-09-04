@@ -23,7 +23,7 @@ COLUMNS = {
 	"zones": ["warehouse", "zone_code", "zone_name", "sequence", "description"],
 	"locations": [
 		"warehouse", "location_code", "location_name", "zone", "location_type",
-		"max_qty", "barcode", "description",
+		"max_qty", "description",
 	],
 	"stock": ["warehouse", "location_code", "item_code", "qty"],
 }
@@ -43,7 +43,6 @@ NOTES = {
 	"location_type": "One of: " + ", ".join(("Storage", "Pick Face", "Bulk", "Staging", "Quarantine"))
 	+ ". Blank means Storage.",
 	"max_qty": "How much this location can hold. Blank or 0 means no limit.",
-	"barcode": "Optional. Scanned to identify the location.",
 	"item_code": "The exact item code.",
 	"qty": "How much of this item sits on this location. The difference comes from, or goes "
 	"back to, unassigned stock — nothing leaves the warehouse.",
@@ -52,7 +51,7 @@ NOTES = {
 WIDTHS = {
 	"warehouse": 32, "zone_code": 14, "zone_name": 22, "sequence": 10, "description": 40,
 	"location_code": 16, "location_name": 24, "zone": 14, "location_type": 16,
-	"max_qty": 12, "barcode": 16, "item_code": 22, "qty": 12,
+	"max_qty": 12, "item_code": 22, "qty": 12,
 }
 
 REQUIRED = {
@@ -64,7 +63,7 @@ REQUIRED = {
 SAMPLE = {
 	"zones": ["01 - Loja Alvalade - ITEC", "FRONT", "Front Aisle", "1", "Fast movers by the till"],
 	"locations": ["01 - Loja Alvalade - ITEC", "A-01", "Aisle A Shelf 1", "FRONT", "Pick Face",
-	              "500", "7890001", "Reachable without a ladder"],
+	              "500", "Reachable without a ladder"],
 	"stock": ["01 - Loja Alvalade - ITEC", "A-01", "ITEM-0001", "12"],
 }
 
@@ -161,7 +160,7 @@ def export_rows(kind, warehouse=None):
 			"Warehouse Location",
 			filters=filters,
 			fields=["warehouse", "location_code", "location_name", "zone", "location_type",
-			        "max_qty", "barcode", "description"],
+			        "max_qty", "description"],
 			order_by="warehouse asc, location_code asc",
 			limit_page_length=0,
 		):
@@ -169,7 +168,7 @@ def export_rows(kind, warehouse=None):
 				continue
 			zone_code = frappe.db.get_value("Warehouse Zone", l.zone, "zone_code") if l.zone else ""
 			out.append([l.warehouse, l.location_code, l.location_name or "", zone_code or "",
-			            l.location_type or "", flt(l.max_qty) or "", l.barcode or "", l.description or ""])
+			            l.location_type or "", flt(l.max_qty) or "", l.description or ""])
 
 	else:
 		rows = frappe.get_all(
@@ -302,8 +301,7 @@ def _check_locations(rows, scope, pending=None):
 			"warehouse": wh, "location_code": code,
 			"location_name": cstr(r.get("location_name")).strip() or code,
 			"zone_code": zone_code, "location_type": ltype or "Storage",
-			"max_qty": max_qty or 0, "barcode": cstr(r.get("barcode")).strip(),
-			"description": cstr(r.get("description")).strip(),
+			"max_qty": max_qty or 0, "description": cstr(r.get("description")).strip(),
 		})
 	return plan, problems
 
@@ -453,7 +451,7 @@ def apply(kind, rows):
 				"warehouse": p["warehouse"], "location_code": p["location_code"],
 				"location_name": p["location_name"], "zone": zone,
 				"location_type": p["location_type"], "max_qty": p["max_qty"],
-				"barcode": p["barcode"], "description": p["description"], "is_active": 1,
+				"description": p["description"], "is_active": 1,
 			})
 			doc.flags.ignore_permissions = True
 			doc.save(ignore_permissions=True)

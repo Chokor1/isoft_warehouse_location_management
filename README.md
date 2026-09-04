@@ -441,8 +441,7 @@ Movement is the whole record of it.
 ## What's in the box
 
 - **Warehouse Location** — code, type (Storage / Pick Face / Bulk / Staging / Quarantine),
-  `pick_priority`, capacity, barcode, default-receiving flag, and an Item Group put-away
-  rule. Named `<warehouse prefix>-<code>`, so every shop can label its racking the way
+  `pick_priority`, capacity, default-receiving flag, and an Item Group put-away rule. Named `<warehouse prefix>-<code>`, so every shop can label its racking the way
   the racking is actually labelled.
 - **Location Stock** — the balance per (warehouse, location, item). Unique-indexed and
   updated with a single atomic statement, so concurrent submits cannot lose a delta.
