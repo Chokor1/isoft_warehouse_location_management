@@ -324,7 +324,6 @@ def _warehouse_locations(warehouse):
 			"is_default_receiving",
 			"pick_priority",
 			"receives_item_group",
-			"max_qty",
 		],
 		limit_page_length=0,
 	)

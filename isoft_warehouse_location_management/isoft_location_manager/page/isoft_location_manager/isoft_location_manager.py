@@ -209,7 +209,7 @@ def get_dashboard_stats(warehouse=None):
 	locs = frappe.get_all(
 		"Warehouse Location",
 		filters={"is_active": 1, "is_unassigned": 0},
-		fields=["name", "warehouse", "location_code", "location_name", "max_qty"],
+		fields=["name", "warehouse", "location_code", "location_name"],
 		limit_page_length=0,
 	)
 	if scope is not None:
@@ -222,13 +222,11 @@ def get_dashboard_stats(warehouse=None):
 	):
 		held[r.location] = {"qty": flt(r.q), "items": cint(r.n)}
 
-	busiest, over_capacity, empty = [], 0, 0
+	busiest, empty = [], 0
 	for l in locs:
 		h = held.get(l.name) or {"qty": 0.0, "items": 0}
 		if h["qty"] <= TOL:
 			empty += 1
-		if flt(l.max_qty) and h["qty"] > flt(l.max_qty) + TOL:
-			over_capacity += 1
 		busiest.append(
 			{
 				"location": l.name,
@@ -236,8 +234,6 @@ def get_dashboard_stats(warehouse=None):
 				"warehouse": l.warehouse,
 				"qty": h["qty"],
 				"items": h["items"],
-				"max_qty": flt(l.max_qty),
-				"fill": (h["qty"] / flt(l.max_qty) * 100) if flt(l.max_qty) else None,
 			}
 		)
 	busiest.sort(key=lambda x: -x["qty"])
@@ -293,7 +289,6 @@ def get_dashboard_stats(warehouse=None):
 		"coverage": (units_shelved / total_units * 100) if total_units else 0,
 		"locations": len(locs),
 		"locations_empty": empty,
-		"locations_over": over_capacity,
 		"busiest": busiest[:5],
 		"moves_7d": sum(moves.values()),
 		"moves_by_type": moves,
@@ -613,7 +608,7 @@ def get_location_contents(location):
 		"Warehouse Location",
 		location,
 		["name", "location_code", "location_name", "warehouse", "description",
-		 "is_active", "is_unassigned", "location_type", "max_qty", "zone"],
+		 "is_active", "is_unassigned", "location_type", "zone"],
 		as_dict=True,
 	)
 	if not loc:
@@ -863,7 +858,6 @@ def get_locations_with_items(warehouse=None, search=None):
 		fields=[
 			"name", "location_code", "location_name", "warehouse", "description",
 			"is_active", "is_unassigned", "location_type", "pick_priority", "zone",
-			"max_qty",
 		],
 		order_by="warehouse asc, is_unassigned asc, pick_priority asc, location_code asc",
 	)
@@ -918,7 +912,6 @@ def get_locations_with_items(warehouse=None, search=None):
 				"is_active": s.is_active,
 				"is_unassigned": 0,
 				"location_type": s.location_type,
-				"max_qty": flt(s.max_qty),
 				"zone": s.zone,
 				"zone_code": (zone_meta.get(s.zone) or {}).get("zone_code"),
 				"zone_name": (zone_meta.get(s.zone) or {}).get("zone_name"),

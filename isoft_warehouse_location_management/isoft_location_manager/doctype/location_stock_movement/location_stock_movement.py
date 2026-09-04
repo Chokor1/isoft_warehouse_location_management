@@ -98,16 +98,13 @@ class LocationStockMovement(Document):
 			if source and target and source.is_unassigned and target.is_unassigned:
 				frappe.throw(_("Row #{0}: nothing to record — both ends are unassigned stock.").format(row.idx))
 
-			if target and not target.is_unassigned:
-				self._validate_capacity(row, target)
-
 	def _section(self, name, idx, side):
 		if not name:
 			return None
 		sec = frappe.db.get_value(
 			"Warehouse Location",
 			name,
-			["name", "warehouse", "is_active", "is_unassigned", "max_qty", "location_name"],
+			["name", "warehouse", "is_active", "is_unassigned", "location_name"],
 			as_dict=True,
 		)
 		if not sec:
@@ -122,20 +119,6 @@ class LocationStockMovement(Document):
 			frappe.throw(_("Row #{0}: Location {1} is inactive.").format(idx, name))
 		return sec
 
-	def _validate_capacity(self, row, target):
-		if not flt(target.max_qty):
-			return
-		held = flt(
-			frappe.db.get_value("Location Stock", {"location": target.name, "qty": [">", 0]}, "sum(qty)")
-		)
-		if held + flt(row.qty) > flt(target.max_qty) + TOL:
-			frappe.msgprint(
-				_("Row #{0}: {1} would hold {2} of a {3} capacity.").format(
-					row.idx, target.name, held + flt(row.qty), flt(target.max_qty)
-				),
-				indicator="orange",
-				alert=True,
-			)
 
 	def _validate_availability(self):
 		"""Every source must actually be able to give up what the row takes.

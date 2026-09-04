@@ -152,11 +152,10 @@ all). Then four figures that a location manager can act on:
 
 - **locations**, and how many are standing empty
 - **movements this week**, split by Stock In / Out / Transfer
-- **over capacity** — locations holding more than they declare
-- **items with no declared location** — nothing says where they belong
+- - **items with no declared location** — nothing says where they belong
 
 Below that, the two locations lists that answer "where is the work": **holding the most**
-(with fill percentage where a capacity is set) and **busiest this week** by movement
+and **busiest this week** by movement
 count. **Location Health** closes it — anything claiming more than the warehouse holds.
 
 There are no document counts here. Preparation requests and material requests are
@@ -183,7 +182,7 @@ location tile onto another zone in the Layout view. Filing is not a stock moveme
 | | |
 |---|---|
 | **Contents** (default) | what every location holds, item by item — the working view |
-| **Layout** | the zones and locations themselves: units, item count, fill against capacity, type. No item lists. |
+| **Layout** | the zones and locations themselves: units, item count, type. No item lists. |
 
 Layout is the map you use when you are organising the place rather than working it. Both
 views take a drop from the unassigned bar, so stock can be put away from either; in
@@ -376,7 +375,7 @@ applied in the order above — so a workbook holding zones *and* the locations t
 lands in one go, whichever order the sheets happen to be in.
 
 **A file is checked in full before any of it is written.** Every problem is reported with
-its row number and what was actually in the cell — *"row 5: capacity is not a number
+its row number and what was actually in the cell — *"row 5: qty is not a number
 (ten)"*, *"row 4: 02 - Loja Viana has no zone NOPE — import the zones first"*. One bad row anywhere and the
 whole workbook lands nowhere — including the sheets that would have been fine. A
 half-imported warehouse is worse than an unimported one, because re-running it would
@@ -441,7 +440,7 @@ Movement is the whole record of it.
 ## What's in the box
 
 - **Warehouse Location** — code, type (Storage / Pick Face / Bulk / Staging / Quarantine),
-  `pick_priority`, capacity, default-receiving flag, and an Item Group put-away rule. Named `<warehouse prefix>-<code>`, so every shop can label its racking the way
+  `pick_priority`, default-receiving flag, and an Item Group put-away rule. Named `<warehouse prefix>-<code>`, so every shop can label its racking the way
   the racking is actually labelled.
 - **Location Stock** — the balance per (warehouse, location, item). Unique-indexed and
   updated with a single atomic statement, so concurrent submits cannot lose a delta.

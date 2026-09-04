@@ -26,7 +26,7 @@ frappe.ui.form.on('Warehouse Location', {
 				'orange'
 			);
 			['location_code', 'location_name', 'warehouse', 'location_type', 'is_active',
-			 'is_default_receiving', 'pick_priority', 'receives_item_group', 'max_qty'].forEach((f) =>
+			 'is_default_receiving', 'pick_priority', 'receives_item_group'].forEach((f) =>
 				frm.set_df_property(f, 'read_only', 1)
 			);
 			return;

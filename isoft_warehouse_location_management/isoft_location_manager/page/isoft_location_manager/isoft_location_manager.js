@@ -219,11 +219,7 @@ isoft_warehouse_location_management.App = class {
 						d.locations_empty ? __('{0} empty', [d.locations_empty]) : __('all holding stock'), 'blue')}
 					${this.tile('fa-exchange', d.moves_7d, __('movements this week'),
 						Object.entries(d.moves_by_type || {}).map((e) => e[0] + ' ' + e[1]).join(' · ') || __('nothing moved'), 'blue')}
-					${this.tile(d.locations_over ? 'fa-warning' : 'fa-check-circle', d.locations_over,
-						__('over capacity'),
-						d.locations_over ? __('holding more than declared') : __('all within capacity'),
-						d.locations_over ? 'amber' : 'green')}
-					<div class="ip-kpi ip-kpi-${d.homeless_items ? 'amber' : 'green'} ip-fade ip-click" data-dock="1" style="--i:3">
+					<div class="ip-kpi ip-kpi-${d.homeless_items ? 'amber' : 'green'} ip-fade ip-click" data-dock="1" style="--i:2">
 						<div class="ip-kpi-icon"><i class="fa fa-home"></i></div>
 						<div><div class="ip-kpi-value">${d.homeless_items}</div>
 						<div class="ip-kpi-label">${esc(__('items with no declared location'))}</div>
@@ -876,9 +872,6 @@ isoft_warehouse_location_management.App = class {
 						empty ? ' · ' + esc(__('{0} empty', [empty])) : ''}</div>
 				</header>
 				<div class="ip-zone-body">${g.locations.map((s) => {
-					const fill = flt(s.max_qty) > 0
-						? Math.min(100, Math.round((flt(s.total_qty) / flt(s.max_qty)) * 100))
-						: null;
 					return `
 					<div class="ip-tile${flt(s.total_qty) ? '' : ' is-empty'}${manage ? ' ip-tile-move' : ''}"
 						${manage ? 'draggable="true"' : ''}
@@ -896,9 +889,6 @@ isoft_warehouse_location_management.App = class {
 							<span class="ip-tile-qty">${format_number(s.total_qty)}</span>
 							<span class="ip-tile-items">${esc(__('{0} item(s)', [s.item_count]))}</span>
 						</div>
-						${fill === null ? '' : `<div class="ip-tile-bar" title="${esc(
-							__('{0} of {1}', [format_number(s.total_qty), format_number(s.max_qty)]))}">
-							<span style="width:${fill}%" class="${fill >= 100 ? 'over' : ''}"></span></div>`}
 						${s.location_type ? `<div class="ip-tile-type">${esc(s.location_type)}</div>` : ''}
 					</div>`; }).join('')}</div>
 			</section>`; }).join('')}</div>`);

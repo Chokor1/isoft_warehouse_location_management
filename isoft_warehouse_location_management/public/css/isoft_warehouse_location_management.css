@@ -477,9 +477,6 @@
 .ip-tile-qty { font-size: 16px; font-weight: 700; color: #0f172a; line-height: 1; }
 .ip-tile.is-empty .ip-tile-qty { color: #cbd5e1; }
 .ip-tile-items { font-size: 11px; color: #94a3b8; }
-.ip-tile-bar { height: 4px; border-radius: 3px; background: #f1f5f9; margin-top: 7px; overflow: hidden; }
-.ip-tile-bar > span { display: block; height: 100%; background: #14b8a6; border-radius: 3px; }
-.ip-tile-bar > span.over { background: #f97316; }
 .ip-tile-type { font-size: 10px; color: #94a3b8; margin-top: 6px;
   text-transform: uppercase; letter-spacing: .04em; }
 

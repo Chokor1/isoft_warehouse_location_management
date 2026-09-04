@@ -22,8 +22,7 @@ KINDS = ("zones", "locations", "stock")
 COLUMNS = {
 	"zones": ["warehouse", "zone_code", "zone_name", "sequence", "description"],
 	"locations": [
-		"warehouse", "location_code", "location_name", "zone", "location_type",
-		"max_qty", "description",
+		"warehouse", "location_code", "location_name", "zone", "location_type", "description",
 	],
 	"stock": ["warehouse", "location_code", "item_code", "qty"],
 }
@@ -42,7 +41,6 @@ NOTES = {
 	"zone": "The zone code this location sits in. It must already exist — import zones first.",
 	"location_type": "One of: " + ", ".join(("Storage", "Pick Face", "Bulk", "Staging", "Quarantine"))
 	+ ". Blank means Storage.",
-	"max_qty": "How much this location can hold. Blank or 0 means no limit.",
 	"item_code": "The exact item code.",
 	"qty": "How much of this item sits on this location. The difference comes from, or goes "
 	"back to, unassigned stock — nothing leaves the warehouse.",
@@ -51,7 +49,7 @@ NOTES = {
 WIDTHS = {
 	"warehouse": 32, "zone_code": 14, "zone_name": 22, "sequence": 10, "description": 40,
 	"location_code": 16, "location_name": 24, "zone": 14, "location_type": 16,
-	"max_qty": 12, "item_code": 22, "qty": 12,
+	"item_code": 22, "qty": 12,
 }
 
 REQUIRED = {
@@ -63,7 +61,7 @@ REQUIRED = {
 SAMPLE = {
 	"zones": ["01 - Loja Alvalade - ITEC", "FRONT", "Front Aisle", "1", "Fast movers by the till"],
 	"locations": ["01 - Loja Alvalade - ITEC", "A-01", "Aisle A Shelf 1", "FRONT", "Pick Face",
-	              "500", "Reachable without a ladder"],
+	              "Reachable without a ladder"],
 	"stock": ["01 - Loja Alvalade - ITEC", "A-01", "ITEM-0001", "12"],
 }
 
@@ -160,7 +158,7 @@ def export_rows(kind, warehouse=None):
 			"Warehouse Location",
 			filters=filters,
 			fields=["warehouse", "location_code", "location_name", "zone", "location_type",
-			        "max_qty", "description"],
+			        "description"],
 			order_by="warehouse asc, location_code asc",
 			limit_page_length=0,
 		):
@@ -168,7 +166,7 @@ def export_rows(kind, warehouse=None):
 				continue
 			zone_code = frappe.db.get_value("Warehouse Zone", l.zone, "zone_code") if l.zone else ""
 			out.append([l.warehouse, l.location_code, l.location_name or "", zone_code or "",
-			            l.location_type or "", flt(l.max_qty) or "", l.description or ""])
+			            l.location_type or "", l.description or ""])
 
 	else:
 		rows = frappe.get_all(
@@ -291,17 +289,13 @@ def _check_locations(rows, scope, pending=None):
 			)
 			continue
 
-		before = len(problems)
-		max_qty = _num(r.get("max_qty"), _("capacity"), i, problems, minimum=0)
-		if len(problems) > before:
-			continue
 		existing = frappe.db.get_value("Warehouse Location", {"warehouse": wh, "location_code": code}, "name")
 		plan.append({
 			"row": i, "action": "update" if existing else "create", "name": existing,
 			"warehouse": wh, "location_code": code,
 			"location_name": cstr(r.get("location_name")).strip() or code,
 			"zone_code": zone_code, "location_type": ltype or "Storage",
-			"max_qty": max_qty or 0, "description": cstr(r.get("description")).strip(),
+			"description": cstr(r.get("description")).strip(),
 		})
 	return plan, problems
 
@@ -450,7 +444,7 @@ def apply(kind, rows):
 			doc.update({
 				"warehouse": p["warehouse"], "location_code": p["location_code"],
 				"location_name": p["location_name"], "zone": zone,
-				"location_type": p["location_type"], "max_qty": p["max_qty"],
+				"location_type": p["location_type"],
 				"description": p["description"], "is_active": 1,
 			})
 			doc.flags.ignore_permissions = True
@@ -550,7 +544,7 @@ def _sheet_into(wb, kind, rows, with_sample=False):
 
 	# quantities and capacities are numbers, and should look like numbers
 	for c, col in enumerate(columns, start=1):
-		if col in ("qty", "max_qty", "sequence"):
+		if col in ("qty", "sequence"):
 			for r in range(2, ws.max_row + 1):
 				ws.cell(row=r, column=c).number_format = "#,##0.###"
 
@@ -565,7 +559,7 @@ def _sheet_into(wb, kind, rows, with_sample=False):
 		)
 		ws.add_data_validation(dv)
 		dv.add("%s2:%s%d" % (c, c, limit))
-	for col in ("qty", "max_qty"):
+	for col in ("qty",):
 		if col in columns:
 			c = get_column_letter(columns.index(col) + 1)
 			dv = DataValidation(
