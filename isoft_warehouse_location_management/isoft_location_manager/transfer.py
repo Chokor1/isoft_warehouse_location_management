@@ -22,7 +22,7 @@ KINDS = ("zones", "locations", "stock")
 COLUMNS = {
 	"zones": ["warehouse", "zone_code", "zone_name", "sequence", "description"],
 	"locations": [
-		"warehouse", "location_code", "location_name", "zone", "location_type", "description",
+		"warehouse", "location_code", "zone", "description",
 	],
 	"stock": ["warehouse", "location_code", "item_code", "qty"],
 }
@@ -37,10 +37,7 @@ NOTES = {
 	"sequence": "Order the zones appear in. Lower comes first. Blank means 0.",
 	"description": "Optional. A note for whoever reads the record later.",
 	"location_code": "Short code, unique inside the warehouse — the label on the rack.",
-	"location_name": "What people call it. Left blank, the code is used.",
 	"zone": "The zone code this location sits in. It must already exist — import zones first.",
-	"location_type": "One of: " + ", ".join(("Storage", "Pick Face", "Bulk", "Staging", "Quarantine"))
-	+ ". Blank means Storage.",
 	"item_code": "The exact item code.",
 	"qty": "How much of this item sits on this location. The difference comes from, or goes "
 	"back to, unassigned stock — nothing leaves the warehouse.",
@@ -48,7 +45,7 @@ NOTES = {
 
 WIDTHS = {
 	"warehouse": 32, "zone_code": 14, "zone_name": 22, "sequence": 10, "description": 40,
-	"location_code": 16, "location_name": 24, "zone": 14, "location_type": 16,
+	"location_code": 16, "zone": 14,
 	"item_code": 22, "qty": 12,
 }
 
@@ -60,8 +57,7 @@ REQUIRED = {
 
 SAMPLE = {
 	"zones": ["01 - Loja Alvalade - ITEC", "FRONT", "Front Aisle", "1", "Fast movers by the till"],
-	"locations": ["01 - Loja Alvalade - ITEC", "A-01", "Aisle A Shelf 1", "FRONT", "Pick Face",
-	              "Reachable without a ladder"],
+	"locations": ["01 - Loja Alvalade - ITEC", "A-01", "FRONT", "Reachable without a ladder"],
 	"stock": ["01 - Loja Alvalade - ITEC", "A-01", "ITEM-0001", "12"],
 }
 
@@ -157,16 +153,14 @@ def export_rows(kind, warehouse=None):
 		for l in frappe.get_all(
 			"Warehouse Location",
 			filters=filters,
-			fields=["warehouse", "location_code", "location_name", "zone", "location_type",
-			        "description"],
+			fields=["warehouse", "location_code", "zone", "description"],
 			order_by="warehouse asc, location_code asc",
 			limit_page_length=0,
 		):
 			if not in_scope(l.warehouse):
 				continue
 			zone_code = frappe.db.get_value("Warehouse Zone", l.zone, "zone_code") if l.zone else ""
-			out.append([l.warehouse, l.location_code, l.location_name or "", zone_code or "",
-			            l.location_type or "", l.description or ""])
+			out.append([l.warehouse, l.location_code, zone_code or "", l.description or ""])
 
 	else:
 		rows = frappe.get_all(
@@ -282,19 +276,10 @@ def _check_locations(rows, scope, pending=None):
 				)
 				continue
 
-		ltype = cstr(r.get("location_type")).strip()
-		if ltype and ltype not in LOCATION_TYPES:
-			problems.append(
-				_("row {0}: {1} is not a location type ({2})").format(i, ltype, ", ".join(LOCATION_TYPES))
-			)
-			continue
-
 		existing = frappe.db.get_value("Warehouse Location", {"warehouse": wh, "location_code": code}, "name")
 		plan.append({
 			"row": i, "action": "update" if existing else "create", "name": existing,
-			"warehouse": wh, "location_code": code,
-			"location_name": cstr(r.get("location_name")).strip() or code,
-			"zone_code": zone_code, "location_type": ltype or "Storage",
+			"warehouse": wh, "location_code": code, "zone_code": zone_code,
 			"description": cstr(r.get("description")).strip(),
 		})
 	return plan, problems
@@ -443,10 +428,14 @@ def apply(kind, rows):
 			) if p["zone_code"] else None
 			doc.update({
 				"warehouse": p["warehouse"], "location_code": p["location_code"],
-				"location_name": p["location_name"], "zone": zone,
-				"location_type": p["location_type"],
-				"description": p["description"], "is_active": 1,
+				"zone": zone, "description": p["description"], "is_active": 1,
 			})
+			# The sheet no longer carries a name or a type. On a location that already
+			# exists those are left exactly as they are — a column a file does not have
+			# is not an instruction to blank the field.
+			if not p["name"]:
+				doc.location_name = p["location_code"]
+				doc.location_type = "Storage"
 			doc.flags.ignore_permissions = True
 			doc.save(ignore_permissions=True)
 			done["updated" if p["name"] else "created"] += 1
@@ -550,15 +539,6 @@ def _sheet_into(wb, kind, rows, with_sample=False):
 
 	# the columns with a fixed set of answers offer them, rather than being guessed at
 	limit = max(ws.max_row + 200, 500)
-	if "location_type" in columns:
-		c = get_column_letter(columns.index("location_type") + 1)
-		dv = DataValidation(
-			type="list", formula1='"%s"' % ",".join(LOCATION_TYPES), allow_blank=True,
-			showErrorMessage=True, errorTitle="Not a location type",
-			error="Choose one of: " + ", ".join(LOCATION_TYPES),
-		)
-		ws.add_data_validation(dv)
-		dv.add("%s2:%s%d" % (c, c, limit))
 	for col in ("qty",):
 		if col in columns:
 			c = get_column_letter(columns.index(col) + 1)
