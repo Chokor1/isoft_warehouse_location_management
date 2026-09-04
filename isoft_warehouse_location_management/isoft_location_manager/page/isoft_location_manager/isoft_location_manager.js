@@ -1578,63 +1578,95 @@ isoft_warehouse_location_management.App = class {
 	}
 
 	// ------------------------------------------------------------------ IMPORT / EXPORT
-	// A warehouse is described in three layers, and they are imported in that order:
-	// the zones it is divided into, the locations inside them, then what sits on each
-	// location. A file is checked in full before any of it is written — a half-imported
-	// warehouse is worse than an unimported one, because re-running the file would
-	// double the quantities and nobody could tell what had already landed.
+	// Two jobs, not three screens. Bringing a warehouse in is one thing you do; taking it
+	// out is another; and *what* each acts on is a detail inside them rather than a mode
+	// the whole page is in.
+	//
+	// A warehouse is described in three layers — the zones it is divided into, the
+	// locations inside them, and what sits on each location — and they depend on each
+	// other in that order. One workbook carries all three, so that is what both sides
+	// speak: choose the layers and get one file; send one file back, and every sheet in
+	// it is read, checked together, and applied in order.
 	render_transfer() {
 		const esc = frappe.utils.escape_html;
-		const KINDS = [
-			{ key: 'zones', label: __('Zones'),
-			  hint: __('The parts a warehouse is divided into. Import these first — a location can name one.') },
-			{ key: 'locations', label: __('Locations'),
-			  hint: __('The shelves, racks and bins themselves. A zone named here must already exist.') },
-			{ key: 'stock', label: __('Stock on locations'),
-			  hint: __('What sits where. The difference comes from, or goes back to, unassigned stock — nothing leaves the warehouse.') },
+		const LAYERS = [
+			{ key: 'zones', label: __('Zones'), note: __('The parts a warehouse is divided into') },
+			{ key: 'locations', label: __('Locations'), note: __('The shelves, racks and bins themselves') },
+			{ key: 'stock', label: __('Stock on locations'), note: __('What sits where') },
 		];
-		this.tKind = this.tKind || 'zones';
+		this.tExport = this.tExport || { zones: true, locations: true, stock: true };
+		this.tTemplate = this.tTemplate || { zones: false, locations: true, stock: false };
+		const any = (bag) => Object.keys(bag).some((k) => bag[k]);
+
+		const picker = (which, chosen) => `
+			<div class="ip-layers">
+				${LAYERS.map((l) => `
+					<label class="ip-layer${chosen[l.key] ? ' on' : ''}">
+						<input type="checkbox" data-which="${which}" data-layer="${l.key}"
+							${chosen[l.key] ? 'checked' : ''}>
+						<span class="ip-layer-text">
+							<span class="ip-layer-label">${esc(l.label)}</span>
+							<span class="ip-layer-note">${esc(l.note)}</span>
+						</span>
+					</label>`).join('')}
+			</div>`;
 
 		this.$content.html(`
-			<div class="ip-toolbar">
-				<div class="ip-viewtoggle">
-					${KINDS.map((k) => `<button class="ip-vt ip-tkind${k.key === this.tKind ? ' on' : ''}"
-						data-kind="${k.key}">${esc(k.label)}</button>`).join('')}
-				</div>
-				<span class="ip-scope-chip">${esc(this.scope || __('All warehouses'))}</span>
-			</div>
-			<div class="ip-transfer"></div>`);
-
-		const $w = this.$content.find('.ip-transfer');
-		const kind = KINDS.find((k) => k.key === this.tKind);
-
-		$w.html(`
-			<p class="ip-t-hint">${esc(kind.hint)}</p>
-			<div class="ip-t-cards">
-				<section class="ip-t-card">
-					<h4>${esc(__('Export'))}</h4>
-					<p>${esc(__('An Excel workbook of what is there now, in exactly the shape the importer accepts. Edit it and send it back.'))}</p>
-					<button class="ip-btn ip-t-export"><i class="fa fa-file-excel-o"></i> ${esc(__('Export {0}', [kind.label]))}</button>
-					<button class="ip-btn ip-t-template"><i class="fa fa-file-excel-o"></i> ${esc(__('Blank template'))}</button>
+			<div class="ip-tsplit">
+				<section class="ip-tpanel">
+					<div class="ip-tpanel-head">
+						<h3><i class="fa fa-upload"></i> ${esc(__('Import'))}</h3>
+						<p>${esc(__('Send a workbook back. Every sheet in it is read and checked together — nothing is written unless all of it is right.'))}</p>
+					</div>
+					<ol class="ip-steps">
+						<li>
+							<span class="ip-step-title">${esc(__('Start from a template'))}</span>
+							${picker('template', this.tTemplate)}
+							<button class="ip-btn ip-t-template"${any(this.tTemplate) ? '' : ' disabled'}>
+								<i class="fa fa-file-excel-o"></i> ${esc(__('Download template'))}</button>
+						</li>
+						<li>
+							<span class="ip-step-title">${esc(__('Fill it in'))}</span>
+							<div class="ip-step-note">${esc(__(
+								'Required columns are marked with a star, and each sheet comes with a note explaining every column.'))}</div>
+						</li>
+						<li>
+							<span class="ip-step-title">${esc(__('Send it back'))}</span>
+							<label class="ip-filepick">
+								<input type="file" class="ip-t-file" accept=".xlsx,.xls,.csv">
+								<i class="fa fa-folder-open-o"></i>
+								<span class="ip-filepick-label">${esc(__('Choose a workbook…'))}</span>
+							</label>
+						</li>
+					</ol>
+					<div class="ip-t-result"></div>
 				</section>
-				<section class="ip-t-card">
-					<h4>${esc(__('Import'))}</h4>
-					<p>${esc(__('An Excel workbook — the template, or an export you have edited. Nothing is written until the whole file has been checked.'))}</p>
-					<input type="file" class="ip-t-file" accept=".xlsx,.xls,.csv">
-					<div class="ip-t-file-name ip-muted">${esc(__('no file chosen'))}</div>
+
+				<section class="ip-tpanel">
+					<div class="ip-tpanel-head">
+						<h3><i class="fa fa-download"></i> ${esc(__('Export'))}</h3>
+						<p>${esc(__('What is there now, as one workbook — in exactly the shape the importer accepts. Edit it and send it straight back.'))}</p>
+					</div>
+					<div class="ip-tpanel-body">
+						${picker('export', this.tExport)}
+						<div class="ip-step-note">${esc(
+							this.scope ? __('From {0}', [this.scope]) : __('From every warehouse you can see'))}</div>
+						<button class="ip-btn ip-btn-primary ip-t-export"${any(this.tExport) ? '' : ' disabled'}>
+							<i class="fa fa-file-excel-o"></i> ${esc(__('Export workbook'))}</button>
+					</div>
 				</section>
-			</div>
-			<div class="ip-t-result"></div>`);
+			</div>`);
 
-		const $res = $w.find('.ip-t-result');
+		const $c = this.$content;
 
-		$w.find('.ip-tkind').on('click', (e) => {
-			this.tKind = $(e.currentTarget).data('kind');
+		$c.find('.ip-layer input').on('change', (e) => {
+			const $i = $(e.currentTarget);
+			const bag = $i.data('which') === 'export' ? this.tExport : this.tTemplate;
+			bag[$i.data('layer')] = $i.is(':checked');
 			this.render_transfer();
 		});
 
-		// A workbook is a file, not JSON — it comes back through the normal download
-		// endpoint rather than being rebuilt in the browser.
+		// a workbook is a file, not JSON: it comes back through the download endpoint
 		const download = (method, args) => {
 			const q = Object.keys(args)
 				.filter((k) => args[k] !== null && args[k] !== undefined && args[k] !== '')
@@ -1642,77 +1674,88 @@ isoft_warehouse_location_management.App = class {
 				.join('&');
 			window.open('/api/method/' + method + (q ? '?' + q : ''), '_blank');
 		};
+		const chosen = (bag) => JSON.stringify(Object.keys(bag).filter((k) => bag[k]));
+		const NS = 'isoft_warehouse_location_management.isoft_location_manager.transfer.';
 
-		$w.find('.ip-t-template').on('click', () => download(
-			'isoft_warehouse_location_management.isoft_location_manager.transfer.download_template',
-			{ kind: this.tKind }));
+		$c.find('.ip-t-template').on('click', () =>
+			download(NS + 'download_template', { kinds: chosen(this.tTemplate) }));
+		$c.find('.ip-t-export').on('click', () =>
+			download(NS + 'download_export',
+				{ kinds: chosen(this.tExport), warehouse: this.leaf_scope() || '' }));
 
-		$w.find('.ip-t-export').on('click', () => download(
-			'isoft_warehouse_location_management.isoft_location_manager.transfer.download_export',
-			{ kind: this.tKind, warehouse: this.leaf_scope() || '' }));
-
-		$w.find('.ip-t-file').on('change', (e) => {
+		const $res = $c.find('.ip-t-result');
+		$c.find('.ip-t-file').on('change', (e) => {
 			const input = e.currentTarget;
 			const file = input.files && input.files[0];
-			$w.find('.ip-t-file-name').text((file && file.name) || __('no file chosen'));
+			$c.find('.ip-filepick-label').text((file && file.name) || __('Choose a workbook…'));
 			if (!file) { $res.empty(); return; }
 			$res.html(`<div class="ip-loading"><div class="ip-spin"></div></div>`);
 
-			// the workbook is read on the server, where openpyxl already lives
+			// read on the server, where the spreadsheet library already lives
 			const reader = new FileReader();
 			reader.onload = () => {
 				this.api('transfer_read', { content: reader.result, filename: file.name })
 					.then((d) => {
-						if (!d) { $res.empty(); return; }
-						if (!d.count) {
-							$res.html(`<div class="ip-t-bad">${esc(
-								__('That sheet has a header but no rows.'))}</div>`);
-							return;
-						}
-						this.api('transfer_check', { kind: this.tKind, rows: JSON.stringify(d.rows) })
-							.then((r) => { if (r) this.render_transfer_result($res, r, d.rows); });
+						if (!d || !d.sheets || !d.sheets.length) { $res.empty(); return; }
+						this.api('transfer_check', { sheets: JSON.stringify(d.sheets) })
+							.then((r) => { if (r) this.render_transfer_result($res, r, d.sheets); });
 					});
 			};
-			reader.onerror = () => $res.html(`<div class="ip-t-bad">${esc(__('That file could not be read.'))}</div>`);
+			reader.onerror = () => $res.html(
+				`<div class="ip-t-bad">${esc(__('That file could not be read.'))}</div>`);
 			reader.readAsDataURL(file);
 		});
 	}
 
-	render_transfer_result($res, r, rows) {
+	render_transfer_result($res, r, sheets) {
 		const esc = frappe.utils.escape_html;
-		const counts = [];
-		if (r.summary.create) counts.push(__('{0} to create', [r.summary.create]));
-		if (r.summary.update) counts.push(__('{0} to update', [r.summary.update]));
-		if (r.summary.set) counts.push(__('{0} to set', [r.summary.set]));
+		const sheet_line = (s) => {
+			const bits = [];
+			if (s.summary.create) bits.push(__('{0} new', [s.summary.create]));
+			if (s.summary.update) bits.push(__('{0} to update', [s.summary.update]));
+			if (s.summary.set) bits.push(__('{0} to set', [s.summary.set]));
+			return `
+				<div class="ip-t-sheet${s.problems.length ? ' is-bad' : ''}">
+					<div class="ip-t-sheet-head">
+						<b>${esc(s.title)}</b>
+						<span class="ip-muted">${esc(s.problems.length
+							? __('{0} of {1} row(s) unusable', [s.problems.length, s.read])
+							: (bits.join(' · ') || __('nothing to do')))}</span>
+					</div>
+					${s.problems.length ? `<ul class="ip-t-problems">${
+						s.problems.slice(0, 25).map((p) => `<li>${esc(p)}</li>`).join('')}${
+						s.problems.length > 25
+							? `<li>${esc(__('… and {0} more', [s.problems.length - 25]))}</li>` : ''
+					}</ul>` : ''}
+				</div>`;
+		};
 
 		$res.html(`
 			<div class="ip-t-report ${r.ok ? 'is-ok' : 'is-bad'}">
-				<div class="ip-t-report-head">
-					<b>${esc(r.ok
-						? __('{0} row(s) read, nothing wrong', [r.rows])
-						: __('{0} problem(s) — nothing will be imported until they are fixed', [r.problems.length]))}</b>
-					${counts.length ? `<span class="ip-muted">${esc(counts.join(' · '))}</span>` : ''}
-				</div>
-				${r.problems.length ? `<ul class="ip-t-problems">${
-					r.problems.slice(0, 40).map((p) => `<li>${esc(p)}</li>`).join('')}${
-					r.problems.length > 40 ? `<li>${esc(__('… and {0} more', [r.problems.length - 40]))}</li>` : ''
-				}</ul>` : ''}
+				<div class="ip-t-report-head"><b>${esc(r.ok
+					? __('{0} row(s) read across {1} sheet(s), nothing wrong', [r.rows, r.sheets.length])
+					: __('{0} problem(s) — nothing will be imported until they are fixed', [r.problems]))}</b></div>
+				${r.sheets.map(sheet_line).join('')}
 				${r.ok && r.rows ? `<button class="ip-btn ip-btn-primary ip-t-apply">
 					<i class="fa fa-check"></i> ${esc(__('Import {0} row(s)', [r.rows]))}</button>` : ''}
 			</div>`);
 
 		$res.find('.ip-t-apply').on('click', () => {
 			$res.find('.ip-t-apply').prop('disabled', true);
-			this.api('transfer_apply', { kind: r.kind, rows: JSON.stringify(rows) }).then((d) => {
+			this.api('transfer_apply', { sheets: JSON.stringify(sheets) }).then((d) => {
 				if (!d) { $res.find('.ip-t-apply').prop('disabled', false); return; }
-				const bits = [];
-				if (d.created) bits.push(__('{0} created', [d.created]));
-				if (d.updated) bits.push(__('{0} updated', [d.updated]));
-				if (d.placed) bits.push(__('{0} put away', [format_number(d.placed)]));
-				if (d.returned) bits.push(__('{0} returned to unassigned', [format_number(d.returned)]));
-				frappe.show_alert({ message: bits.join(' · ') || __('Done'), indicator: 'green' });
-				$res.html(`<div class="ip-t-report is-ok"><div class="ip-t-report-head"><b>${
-					esc(__('Imported.'))}</b> <span class="ip-muted">${esc(bits.join(' · '))}</span></div></div>`);
+				const said = (d.sheets || []).map((x) => {
+					const bits = [];
+					if (x.created) bits.push(__('{0} created', [x.created]));
+					if (x.updated) bits.push(__('{0} updated', [x.updated]));
+					if (x.placed) bits.push(__('{0} put away', [format_number(x.placed)]));
+					if (x.returned) bits.push(__('{0} returned to unassigned', [format_number(x.returned)]));
+					return `<div class="ip-t-sheet"><div class="ip-t-sheet-head"><b>${esc(x.title)}</b>
+						<span class="ip-muted">${esc(bits.join(' · ') || __('nothing to do'))}</span></div></div>`;
+				}).join('');
+				frappe.show_alert({ message: __('Imported'), indicator: 'green' });
+				$res.html(`<div class="ip-t-report is-ok">
+					<div class="ip-t-report-head"><b>${esc(__('Imported.'))}</b></div>${said}</div>`);
 			});
 		});
 	}

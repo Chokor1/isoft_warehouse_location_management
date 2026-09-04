@@ -500,25 +500,66 @@
 
 
 /* ------------------------------------------------------------------ import / export */
-.ip-transfer { max-width: 860px; }
-.ip-t-hint { font-size: 12.5px; color: #64748b; line-height: 1.55; margin: 2px 0 14px; }
-.ip-t-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.ip-t-card { border: 1px solid var(--ip-line, #e2e8f0); border-radius: 10px; padding: 14px 16px; background: #fff; }
-.ip-t-card h4 { margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #0f172a; }
-.ip-t-card p { font-size: 11.5px; color: #64748b; line-height: 1.5; margin: 0 0 12px; }
-.ip-t-card .ip-btn + .ip-btn { margin-left: 8px; }
-.ip-t-file { font-size: 12px; }
-.ip-t-file-name { font-size: 11.5px; margin-top: 6px; }
+/* Two panels side by side: bringing a warehouse in, and taking it out. What each acts
+   on is chosen inside it, rather than putting the whole page into a mode. */
+.ip-tsplit { display: grid; grid-template-columns: 1.15fr 1fr; gap: 18px; align-items: start; }
+.ip-tpanel { border: 1px solid var(--ip-line, #e2e8f0); border-radius: 12px; background: #fff;
+  overflow: hidden; }
+.ip-tpanel-head { padding: 15px 18px 13px; border-bottom: 1px solid var(--ip-line, #e2e8f0);
+  background: #fbfdfd; }
+.ip-tpanel-head h3 { margin: 0 0 4px; font-size: 14px; font-weight: 700; color: #0f172a;
+  display: flex; align-items: center; gap: 8px; }
+.ip-tpanel-head h3 .fa { color: #0f766e; font-size: 13px; }
+.ip-tpanel-head p { margin: 0; font-size: 11.5px; line-height: 1.55; color: #64748b; }
+.ip-tpanel-body { padding: 16px 18px 18px; }
 
-.ip-t-report { margin-top: 16px; border: 1px solid var(--ip-line, #e2e8f0); border-radius: 10px;
-  padding: 13px 16px; background: #fff; }
+.ip-steps { list-style: none; counter-reset: step; margin: 0; padding: 16px 18px 6px; }
+.ip-steps > li { counter-increment: step; position: relative; padding: 0 0 18px 30px; }
+.ip-steps > li::before { content: counter(step); position: absolute; left: 0; top: 0;
+  width: 20px; height: 20px; border-radius: 50%; background: #0f766e; color: #fff;
+  font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.ip-steps > li::after { content: ''; position: absolute; left: 9.5px; top: 24px; bottom: 4px;
+  width: 1px; background: var(--ip-line, #e2e8f0); }
+.ip-steps > li:last-child { padding-bottom: 4px; }
+.ip-steps > li:last-child::after { display: none; }
+.ip-step-title { display: block; font-size: 12.5px; font-weight: 600; color: #0f172a;
+  margin-bottom: 8px; }
+.ip-step-note { font-size: 11.5px; line-height: 1.55; color: #64748b; }
+
+/* what a side acts on */
+.ip-layers { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.ip-layer { display: flex; align-items: flex-start; gap: 9px; margin: 0; cursor: pointer;
+  border: 1px solid var(--ip-line, #e2e8f0); border-radius: 8px; padding: 8px 11px;
+  transition: border-color .15s, background .15s; }
+.ip-layer:hover { border-color: #cbd5e1; background: #fbfdfd; }
+.ip-layer.on { border-color: #99f6e4; background: #f0fdfa; }
+.ip-layer input { margin: 2px 0 0; flex: none; }
+.ip-layer-text { display: flex; flex-direction: column; gap: 1px; }
+.ip-layer-label { font-size: 12.5px; font-weight: 600; color: #0f172a; }
+.ip-layer-note { font-size: 11px; color: #64748b; }
+
+.ip-filepick { display: flex; align-items: center; gap: 9px; margin: 0; cursor: pointer;
+  border: 1px dashed #cbd5e1; border-radius: 8px; padding: 11px 13px; background: #fbfdfd;
+  transition: border-color .15s, background .15s; }
+.ip-filepick:hover { border-color: #0f766e; background: #f0fdfa; }
+.ip-filepick input { display: none; }
+.ip-filepick .fa { color: #94a3b8; }
+.ip-filepick-label { font-size: 12px; color: #475569; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+
+/* what the file would do */
+.ip-t-result { padding: 0 18px 18px; }
+.ip-t-report { border: 1px solid var(--ip-line, #e2e8f0); border-radius: 10px; padding: 12px 14px; }
 .ip-t-report.is-ok { border-color: #99f6e4; background: #f0fdfa; }
 .ip-t-report.is-bad { border-color: #fecaca; background: #fef2f2; }
-.ip-t-report-head { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
-.ip-t-report-head .ip-muted { font-size: 11.5px; }
-.ip-t-problems { margin: 10px 0 0; padding-left: 18px; font-size: 12px; color: #9b2f2f;
-  line-height: 1.65; max-height: 260px; overflow: auto; }
+.ip-t-report-head { font-size: 12.5px; margin-bottom: 4px; }
+.ip-t-sheet { border-top: 1px solid rgba(15, 23, 42, .07); padding: 8px 0 2px; margin-top: 6px; }
+.ip-t-sheet:first-of-type { border-top: 0; }
+.ip-t-sheet-head { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.ip-t-sheet-head .ip-muted { font-size: 11px; }
+.ip-t-problems { margin: 6px 0 0; padding-left: 17px; font-size: 11.5px; color: #9b2f2f;
+  line-height: 1.6; max-height: 220px; overflow: auto; }
 .ip-t-report .ip-btn { margin-top: 12px; }
-.ip-t-bad { margin-top: 16px; font-size: 12.5px; color: #b45309; }
+.ip-t-bad { font-size: 12.5px; color: #b45309; }
 
-@media (max-width: 720px) { .ip-t-cards { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .ip-tsplit { grid-template-columns: 1fr; } }

@@ -344,8 +344,9 @@ with three places named under it.
 
 ## Import and export
 
-`Import / Export` takes a warehouse in and out as **Excel**, in the three layers a
-warehouse is actually described in — and in that order:
+`Import / Export` is two things: bringing a warehouse in, and taking it out. What each one
+acts on is chosen inside it. A warehouse is described in three layers, which depend on
+each other in this order:
 
 | | |
 |---|---|
@@ -353,12 +354,17 @@ warehouse is actually described in — and in that order:
 | **Locations** | the shelves, racks and bins. A zone named here must already exist |
 | **Stock on locations** | what sits where |
 
+**One workbook carries all three.** Tick the layers, get one file with a sheet each; send
+one file back and every sheet in it is recognised by its own header, checked together, and
+applied in the order above — so a workbook holding zones *and* the locations that name them
+lands in one go, whichever order the sheets happen to be in.
+
 **A file is checked in full before any of it is written.** Every problem is reported with
 its row number and what was actually in the cell — *"row 5: capacity is not a number
-(ten)"*, *"row 4: 02 - Loja Viana has no zone NOPE — import the zones first"*. A file with
-one bad row lands nowhere: a half-imported warehouse is worse than an unimported one,
-because re-running it would double the quantities and nobody could tell what had already
-landed.
+(ten)"*, *"row 4: 02 - Loja Viana has no zone NOPE — import the zones first"*. One bad row anywhere and the
+whole workbook lands nowhere — including the sheets that would have been fine. A
+half-imported warehouse is worse than an unimported one, because re-running it would
+double the quantities and nobody could tell what had already landed.
 
 Quantities are read the way spreadsheets write them, so `1 234,50` and `1,234.50` both
 mean the same number, and `ten` is a complaint rather than a zero. Stock cannot be placed

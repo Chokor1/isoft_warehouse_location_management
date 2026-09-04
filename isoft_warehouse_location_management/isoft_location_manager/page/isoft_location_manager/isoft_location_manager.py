@@ -1599,14 +1599,14 @@ def transfer_read(content, filename=None):
 
 
 @frappe.whitelist()
-def transfer_check(kind, rows):
+def transfer_check(sheets):
 	from isoft_warehouse_location_management.isoft_location_manager import transfer
 
-	return transfer.check(kind, rows)
+	return transfer.check_sheets(sheets)
 
 
 @frappe.whitelist()
-def transfer_apply(kind, rows):
+def transfer_apply(sheets):
 	from isoft_warehouse_location_management.isoft_location_manager import transfer
 
-	return transfer.apply(kind, rows)
+	return transfer.apply_sheets(sheets)

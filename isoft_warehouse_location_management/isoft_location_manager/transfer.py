@@ -204,7 +204,7 @@ def export_rows(kind, warehouse=None):
 # warehouse changed between looking and pressing the button.
 
 
-def _check_zones(rows, scope):
+def _check_zones(rows, scope, pending=None):
 	problems, plan = [], []
 	seen = set()
 	for i, r in enumerate(rows, start=1):
@@ -243,7 +243,7 @@ def _check_zones(rows, scope):
 	return plan, problems
 
 
-def _check_locations(rows, scope):
+def _check_locations(rows, scope, pending=None):
 	from isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_location.warehouse_location import (
 		UNASSIGNED_CODE,
 	)
@@ -274,10 +274,12 @@ def _check_locations(rows, scope):
 		seen.add((wh, code))
 
 		zone_code = cstr(r.get("zone")).strip().upper()
-		zone = None
 		if zone_code:
-			zone = frappe.db.get_value("Warehouse Zone", {"warehouse": wh, "zone_code": zone_code}, "name")
-			if not zone:
+			known = frappe.db.exists("Warehouse Zone", {"warehouse": wh, "zone_code": zone_code})
+			# a zone the zones sheet of this same workbook is about to create counts as
+			# existing: the sheets are applied in order, so by then it will
+			coming = (wh, zone_code) in ((pending or {}).get("zones") or set())
+			if not known and not coming:
 				problems.append(
 					_("row {0}: {1} has no zone {2} — import the zones first").format(i, wh, zone_code)
 				)
@@ -299,14 +301,14 @@ def _check_locations(rows, scope):
 			"row": i, "action": "update" if existing else "create", "name": existing,
 			"warehouse": wh, "location_code": code,
 			"location_name": cstr(r.get("location_name")).strip() or code,
-			"zone": zone, "location_type": ltype or "Storage",
+			"zone_code": zone_code, "location_type": ltype or "Storage",
 			"max_qty": max_qty or 0, "barcode": cstr(r.get("barcode")).strip(),
 			"description": cstr(r.get("description")).strip(),
 		})
 	return plan, problems
 
 
-def _check_stock(rows, scope):
+def _check_stock(rows, scope, pending=None):
 	from isoft_warehouse_location_management.isoft_location_manager.doctype.location_stock.location_stock import (
 		bin_qty,
 		get_balance,
@@ -333,15 +335,16 @@ def _check_stock(rows, scope):
 			"Warehouse Location", {"warehouse": wh, "location_code": code},
 			["name", "is_active", "is_unassigned"], as_dict=True
 		)
-		if not loc:
+		coming = (wh, code) in ((pending or {}).get("locations") or set())
+		if not loc and not coming:
 			problems.append(_("row {0}: {1} has no location {2}").format(i, wh, code))
 			continue
-		if loc.is_unassigned:
+		if loc and loc.is_unassigned:
 			problems.append(
 				_("row {0}: unassigned stock is what is left over — it cannot be imported into").format(i)
 			)
 			continue
-		if not loc.is_active:
+		if loc and not loc.is_active:
 			problems.append(_("row {0}: location {1} is not active").format(i, code))
 			continue
 
@@ -349,7 +352,7 @@ def _check_stock(rows, scope):
 		if qty is None:
 			continue
 
-		key = (loc.name, item)
+		key = (loc.name if loc else (wh, code), item)
 		if key in claimed:
 			problems.append(
 				_("row {0}: {1} on {2} is already set by row {3}").format(i, item, code, claimed[key])
@@ -358,9 +361,9 @@ def _check_stock(rows, scope):
 		claimed[key] = i
 
 		plan.append({
-			"row": i, "warehouse": wh, "location": loc.name, "location_code": code,
-			"item_code": item, "qty": qty,
-			"was": get_balance(loc.name, item),
+			"row": i, "warehouse": wh, "location": loc.name if loc else None,
+			"location_code": code, "item_code": item, "qty": qty,
+			"was": get_balance(loc.name, item) if loc else 0,
 		})
 
 	# a location cannot be given more of an item than the warehouse holds
@@ -370,11 +373,12 @@ def _check_stock(rows, scope):
 	for (wh, item), group in wanted.items():
 		on_hand = bin_qty(wh, item)
 		# everything this file does not mention stays where it is
+		touched = tuple(p["location"] for p in group if p["location"]) or ("",)
 		others = flt(
 			frappe.db.sql(
 				"""select sum(qty) from `tabLocation Stock`
 				   where warehouse=%s and item_code=%s and location not in %s""",
-				(wh, item, tuple(p["location"] for p in group) or ("",)),
+				(wh, item, touched),
 			)[0][0]
 		)
 		asked = sum(flt(p["qty"]) for p in group)
@@ -396,7 +400,7 @@ def check(kind, rows):
 	"""Dry run: what would happen, and everything wrong with the file."""
 	scope = _guard()
 	kind = _kind(kind)
-	plan, problems = CHECKERS[kind](_rows(rows), scope)
+	plan, problems = CHECKERS[kind](_rows(rows), scope, None)
 	summary = {"create": 0, "update": 0, "set": 0}
 	for p in plan:
 		summary[p.get("action", "set")] = summary.get(p.get("action", "set"), 0) + 1
@@ -415,7 +419,7 @@ def apply(kind, rows):
 	"""Write the file, or write nothing at all."""
 	scope = _guard()
 	kind = _kind(kind)
-	plan, problems = CHECKERS[kind](_rows(rows), scope)
+	plan, problems = CHECKERS[kind](_rows(rows), scope, None)
 	if problems:
 		frappe.throw(
 			_("Nothing was imported — {0} problem(s) to fix first:<br>{1}").format(
@@ -440,9 +444,14 @@ def apply(kind, rows):
 		for p in plan:
 			doc = (frappe.get_doc("Warehouse Location", p["name"]) if p["name"]
 			       else frappe.new_doc("Warehouse Location"))
+			# resolved now rather than at check time: the zone may have been created by an
+			# earlier sheet of this same workbook
+			zone = frappe.db.get_value(
+				"Warehouse Zone", {"warehouse": p["warehouse"], "zone_code": p["zone_code"]}, "name"
+			) if p["zone_code"] else None
 			doc.update({
 				"warehouse": p["warehouse"], "location_code": p["location_code"],
-				"location_name": p["location_name"], "zone": p["zone"],
+				"location_name": p["location_name"], "zone": zone,
 				"location_type": p["location_type"], "max_qty": p["max_qty"],
 				"barcode": p["barcode"], "description": p["description"], "is_active": 1,
 			})
@@ -456,9 +465,21 @@ def apply(kind, rows):
 		)
 
 		for p in plan:
+			# likewise: the location may have been created a moment ago by the locations
+			# sheet of this same workbook
+			location = p["location"] or frappe.db.get_value(
+				"Warehouse Location",
+				{"warehouse": p["warehouse"], "location_code": p["location_code"]}, "name"
+			)
+			if not location:
+				frappe.throw(
+					_("Row {0}: {1} has no location {2}.").format(
+						p["row"], p["warehouse"], p["location_code"]
+					)
+				)
 			# the board's own path: the difference comes from, or goes back to, unassigned
 			# stock, and the movement is recorded either way
-			r = set_location_qty(p["warehouse"], p["item_code"], p["location"], p["qty"])
+			r = set_location_qty(p["warehouse"], p["item_code"], location, p["qty"])
 			moved = flt((r or {}).get("changed"))
 			if moved > 0:
 				done["placed"] += moved
@@ -485,7 +506,7 @@ def _sheet_title(kind):
 	return {"zones": "Zones", "locations": "Locations", "stock": "Stock on locations"}[kind]
 
 
-def _workbook(kind, rows, with_sample=False):
+def _sheet_into(wb, kind, rows, with_sample=False):
 	from openpyxl import Workbook
 	from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 	from openpyxl.utils import get_column_letter
@@ -494,9 +515,12 @@ def _workbook(kind, rows, with_sample=False):
 	columns = COLUMNS[kind]
 	required = REQUIRED[kind]
 
-	wb = Workbook()
-	ws = wb.active
-	ws.title = _sheet_title(kind)
+	if wb is None:
+		wb = Workbook()
+		ws = wb.active
+		ws.title = _sheet_title(kind)
+	else:
+		ws = wb.create_sheet(_sheet_title(kind))
 
 	head_font = Font(bold=True, color="FFFFFFFF", size=11)
 	head_fill = PatternFill("solid", fgColor=HEADER_FILL)
@@ -554,14 +578,14 @@ def _workbook(kind, rows, with_sample=False):
 			ws.add_data_validation(dv)
 			dv.add("%s2:%s%d" % (c, c, limit))
 
-	_help_sheet(wb, kind)
 	return wb
 
 
-def _help_sheet(wb, kind):
+def _help_sheet(wb, kind, suffix=False):
 	from openpyxl.styles import Alignment, Font, PatternFill
 
-	ws = wb.create_sheet("How to fill this in")
+	title = "How to fill in %s" % _sheet_title(kind) if suffix else "How to fill this in"
+	ws = wb.create_sheet(title[:31])
 	ws.column_dimensions["A"].width = 20
 	ws.column_dimensions["B"].width = 12
 	ws.column_dimensions["C"].width = 86
@@ -612,69 +636,76 @@ def _respond(wb, filename):
 	frappe.response["type"] = "binary"
 
 
+def _kinds(kinds):
+	"""One or several kinds, in the order a warehouse has to be described."""
+	if isinstance(kinds, str):
+		kinds = frappe.parse_json(kinds) if kinds.strip().startswith("[") else [kinds]
+	wanted = [k for k in KINDS if k in set(kinds or [])]
+	if not wanted:
+		frappe.throw(_("Choose at least one thing to include."))
+	return wanted
+
+
+def _multi_workbook(kinds, rows_by_kind, with_sample=False):
+	"""A sheet per kind, in dependency order, with the help sheets after them."""
+	wb = None
+	for kind in kinds:
+		wb = _sheet_into(wb, kind, rows_by_kind.get(kind) or [], with_sample)
+	for kind in kinds:
+		_help_sheet(wb, kind, suffix=len(kinds) > 1)
+	return wb
+
+
 @frappe.whitelist()
-def download_template(kind):
-	"""An empty workbook with the right columns, one example row, and a help sheet."""
+def download_template(kinds="locations"):
+	"""Empty sheets with the right columns, an example row each, and how to fill them in."""
 	_guard()
-	kind = _kind(kind)
-	_respond(_workbook(kind, [], with_sample=True), "ilm-%s-template.xlsx" % kind)
+	kinds = _kinds(kinds)
+	wb = _multi_workbook(kinds, {}, with_sample=True)
+	name = "ilm-template.xlsx" if len(kinds) > 1 else "ilm-%s-template.xlsx" % kinds[0]
+	_respond(wb, name)
 
 
 @frappe.whitelist()
-def download_export(kind, warehouse=None):
+def download_export(kinds="locations", warehouse=None):
 	"""What is there now, in exactly the workbook the importer accepts."""
 	_guard()
-	kind = _kind(kind)
-	data = export_rows(kind, warehouse)
-	_respond(_workbook(kind, data["rows"]), "ilm-%s.xlsx" % kind)
+	kinds = _kinds(kinds)
+	rows_by_kind = {k: export_rows(k, warehouse)["rows"] for k in kinds}
+	wb = _multi_workbook(kinds, rows_by_kind)
+	name = "ilm-export.xlsx" if len(kinds) > 1 else "ilm-%s.xlsx" % kinds[0]
+	_respond(wb, name)
 
 
-@frappe.whitelist()
-def read_upload(content, filename=None):
-	"""Turn an uploaded workbook into rows, keyed by the header names.
+def _kind_of(header):
+	"""Which of the three a sheet is, judged by its own columns.
 
-	Accepts .xlsx and .csv, because somebody will always send a .csv, and refusing it
-	teaches them nothing. The header is matched loosely — case, spaces and the `*` the
-	template puts on required columns are all ignored — so a sheet that has been through
-	someone's hands still lands.
+	The distinguishing column is enough and does not depend on order: only stock names an
+	item, only zones name a zone code of their own, and what is left with a location code
+	is the locations sheet.
 	"""
-	_guard()
-	import base64
+	cols = set(header)
+	if "item_code" in cols:
+		return "stock"
+	if "zone_code" in cols:
+		return "zones"
+	if "location_code" in cols:
+		return "locations"
+	return None
 
-	raw = content
-	if isinstance(raw, str):
-		if "," in raw[:64] and raw[:5] == "data:":
-			raw = raw.split(",", 1)[1]
-		raw = base64.b64decode(raw)
 
-	name = (filename or "").lower()
-	if name.endswith(".csv"):
-		text = raw.decode("utf-8-sig", errors="replace")
-		import csv
-		import io
+def _header_key(h):
+	return cstr(h).strip().lower().replace("*", "").replace(" ", "_").strip("_")
 
-		table = [r for r in csv.reader(io.StringIO(text))]
-	else:
-		from frappe.utils.xlsxutils import read_xlsx_file_from_attached_file
 
-		table = read_xlsx_file_from_attached_file(fcontent=raw)
-
+def _table_to_rows(table):
 	table = [r for r in (table or []) if any(cstr(c).strip() for c in r)]
 	if not table:
-		frappe.throw(_("That file has no rows in it."))
-
-	def key(h):
-		return cstr(h).strip().lower().replace("*", "").replace(" ", "_").strip("_")
-
-	header = [key(h) for h in table[0]]
-	known = set(COLUMNS["zones"]) | set(COLUMNS["locations"]) | set(COLUMNS["stock"])
-	if not any(h in known for h in header):
-		frappe.throw(
-			_("The first row of that sheet does not look like column names. Expected some of: {0}").format(
-				", ".join(sorted(known))
-			)
-		)
-
+		return None, []
+	header = [_header_key(h) for h in table[0]]
+	kind = _kind_of(header)
+	if not kind:
+		return None, []
 	rows = []
 	for line in table[1:]:
 		row = {}
@@ -682,4 +713,120 @@ def read_upload(content, filename=None):
 			if h:
 				row[h] = line[i] if i < len(line) else ""
 		rows.append(row)
-	return {"rows": rows, "count": len(rows), "columns": header}
+	return kind, rows
+
+
+@frappe.whitelist()
+def read_upload(content, filename=None):
+	"""Turn an uploaded workbook into sheets of rows, each one identified by its header.
+
+	A workbook may hold zones, locations and stock at once — that is what the export
+	produces — so every sheet is read and identified on its own. Sheets that are not one
+	of the three are skipped rather than complained about: a working spreadsheet usually
+	has a scratch tab in it.
+
+	`.csv` is accepted too, because somebody will always send one, and refusing it
+	teaches them nothing.
+	"""
+	_guard()
+	import base64
+
+	raw = content
+	if isinstance(raw, str):
+		if raw[:5] == "data:" and "," in raw[:128]:
+			raw = raw.split(",", 1)[1]
+		raw = base64.b64decode(raw)
+
+	tables = []
+	if (filename or "").lower().endswith(".csv"):
+		import csv
+		import io
+
+		text = raw.decode("utf-8-sig", errors="replace")
+		tables.append([r for r in csv.reader(io.StringIO(text))])
+	else:
+		import io
+
+		from openpyxl import load_workbook
+
+		wb = load_workbook(io.BytesIO(raw), data_only=True, read_only=True)
+		for ws in wb.worksheets:
+			tables.append([[c for c in row] for row in ws.iter_rows(values_only=True)])
+
+	sheets = []
+	for table in tables:
+		kind, rows = _table_to_rows(table)
+		if kind and rows:
+			sheets.append({"kind": kind, "rows": rows, "count": len(rows)})
+
+	if not sheets:
+		frappe.throw(
+			_("Nothing in that file looks like zones, locations or stock. "
+			  "The first row of a sheet has to be the column names — start from a template.")
+		)
+
+	# always in the order a warehouse has to be described
+	sheets.sort(key=lambda x: KINDS.index(x["kind"]))
+	return {"sheets": sheets, "count": sum(s["count"] for s in sheets)}
+
+
+@frappe.whitelist()
+def check_sheets(sheets):
+	"""Dry run every sheet, in order, and report them together."""
+	scope = _guard()
+	sheets = frappe.parse_json(sheets) if isinstance(sheets, str) else sheets
+	sheets = sorted(sheets or [], key=lambda x: KINDS.index(_kind(x.get("kind"))))
+	out, ok_all = [], True
+	# what the sheets before this one will have created by the time it is applied
+	pending = {"zones": set(), "locations": set()}
+	for sheet in sheets:
+		kind = _kind(sheet.get("kind"))
+		plan, problems = CHECKERS[kind](sheet.get("rows") or [], scope, pending)
+		if kind == "zones":
+			pending["zones"] |= {(p["warehouse"], p["zone_code"]) for p in plan}
+		elif kind == "locations":
+			pending["locations"] |= {(p["warehouse"], p["location_code"]) for p in plan}
+		summary = {"create": 0, "update": 0, "set": 0}
+		for p in plan:
+			key = p.get("action", "set")
+			summary[key] = summary.get(key, 0) + 1
+		ok_all = ok_all and not problems
+		out.append({
+			"kind": kind, "title": _sheet_title(kind), "rows": len(plan),
+			"read": len(sheet.get("rows") or []), "problems": problems, "summary": summary,
+		})
+	return {"ok": ok_all, "sheets": out,
+	        "rows": sum(s["rows"] for s in out),
+	        "problems": sum(len(s["problems"]) for s in out)}
+
+
+@frappe.whitelist()
+def apply_sheets(sheets):
+	"""Write every sheet, or write nothing at all.
+
+	Checked as a whole first: locations that name a zone in the same file are only valid
+	once that zone exists, so the sheets are applied in order — but a problem anywhere
+	stops all of it, including the sheets that would have been fine.
+	"""
+	_guard()
+	sheets = frappe.parse_json(sheets) if isinstance(sheets, str) else sheets
+	sheets = sorted(sheets or [], key=lambda x: KINDS.index(_kind(x.get("kind"))))
+
+	report = check_sheets(sheets)
+	if not report["ok"]:
+		lines = []
+		for s in report["sheets"]:
+			lines += ["<b>%s</b>: %s" % (s["title"], p) for p in s["problems"][:10]]
+		frappe.throw(
+			_("Nothing was imported — {0} problem(s) to fix first:<br>{1}").format(
+				report["problems"], "<br>".join(lines[:15])
+			)
+		)
+
+	done = []
+	for sheet in sheets:
+		kind = _kind(sheet.get("kind"))
+		r = apply(kind, frappe.as_json(sheet.get("rows") or []))
+		r["title"] = _sheet_title(kind)
+		done.append(r)
+	return {"ok": True, "sheets": done}
