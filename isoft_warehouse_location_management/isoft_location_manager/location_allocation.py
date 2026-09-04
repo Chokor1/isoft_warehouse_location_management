@@ -237,6 +237,39 @@ def allocate(warehouse, item_code, qty, direction="out"):
 # ======================================================================
 # validation
 # ======================================================================
+def sync_primary(row):
+	"""Keep the row's single-value location in step with its allocation.
+
+	`write_row` sets both, but a caller that posts the allocation on its own — the till
+	does, and so does anything driving the API directly — would leave the single field
+	empty. That field is what the grid column, the print formats and anything reading one
+	value fall back to, so an allocation without it is a row that describes itself in one
+	place and not the other.
+	"""
+	rows = parse(row.get(ALLOCATION_FIELD))
+	if rows and not row.get("custom_from_location"):
+		row.set("custom_from_location", primary(rows))
+
+
+def needs_a_choice(warehouse, item_code, qty):
+	"""Would settling this line be a guess rather than a lookup?
+
+	True only when several locations could each supply it and the item names none of them
+	as its pick face. One location, or a declared one, or a line so big it has to span
+	several — all of those have an answer, and an answer nobody has to be asked for.
+
+	Governed by `ask_when_ambiguous`: switched off, the resolver leads with its
+	highest-priority candidate as it always did.
+	"""
+	from isoft_warehouse_location_management.isoft_location_manager.api import setting
+	from isoft_warehouse_location_management.isoft_location_manager.location_resolver import resolve_one
+
+	if not setting("ask_when_ambiguous"):
+		return False
+	res = resolve_one(warehouse, item_code, "out", qty) or {}
+	return bool(res.get("needs_choice"))
+
+
 def require_settled(row, warehouse, idx=None, direction="out"):
 	"""Stock going out has to say where it came from.
 

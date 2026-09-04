@@ -16,6 +16,7 @@
   "default_warehouse",
   "stock_validation",
   "auto_resolve_locations",
+  "ask_when_ambiguous",
   "allow_pick_from_unassigned",
   "require_location_on_out",
   "allow_location_on_in",
@@ -102,6 +103,13 @@
   },
   {
    "default": "1",
+   "fieldname": "ask_when_ambiguous",
+   "fieldtype": "Check",
+   "label": "Ask Which Location When There Is a Choice",
+   "description": "When several locations could supply a line and the item has no declared pick location, leave it blank for somebody to choose rather than picking the highest-priority one. A line with only one answer is still filled in."
+  },
+  {
+   "default": "1",
    "description": "Offer the warehouse's Unassigned Stock location as a place to pick from. Turn off once everything is put away.",
    "fieldname": "allow_pick_from_unassigned",
    "fieldtype": "Check",
@@ -161,7 +169,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-26 16:00:00.000000",
+ "modified": "2026-08-26 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Isoft Location Manager",
  "name": "Picking Settings",

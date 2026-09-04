@@ -123,7 +123,8 @@ def resolve_returns(doc):
 				indicator="orange", alert=True,
 			)
 	for row in doc.items:
-		alloc.require_settled(row, row.warehouse, row.idx, "out")
+		if doc.docstatus == 1:
+			alloc.require_settled(row, row.warehouse, row.idx, "out")
 
 
 def _take_claimed(rows, claimed, warehouse, item_code, qty):

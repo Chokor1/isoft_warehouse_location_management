@@ -59,9 +59,18 @@ def get_item_location_options(warehouse, item_code, qty=0, preferred=None):
 
 	chosen = preferred or res.get("location")
 	plan, shortfall = top_up(warehouse, item_code, flt(qty), chosen) if flt(qty) > 0 else ([], 0)
+	from isoft_warehouse_location_management.isoft_location_manager.location_allocation import (
+		needs_a_choice,
+	)
+
+	must_choose = needs_a_choice(warehouse, item_code, flt(qty)) if flt(qty) > 0 else False
 	return {
 		"enabled": 1,
-		"default": res.get("location"),
+		# Several locations could supply this and the item declares none of them. The till
+		# is told to ask rather than being handed an answer somebody would have to notice
+		# was a guess.
+		"must_choose": 1 if must_choose else 0,
+		"default": None if must_choose else res.get("location"),
 		"mode": res.get("mode"),
 		"reason": res.get("reason"),
 		"options": options,
@@ -73,6 +82,8 @@ def get_item_location_options(warehouse, item_code, qty=0, preferred=None):
 		# the whole proposal, one location or several — the till opens its pick table on
 		# this, so a plan that only appeared for multi-location lines would leave the
 		# ordinary case showing an empty table
-		"plan": [{"location": p["location"], "qty": flt(p["qty"])} for p in plan],
+		"plan": [] if must_choose else [
+			{"location": p["location"], "qty": flt(p["qty"])} for p in plan
+		],
 		"shortfall": flt(shortfall),
 	}

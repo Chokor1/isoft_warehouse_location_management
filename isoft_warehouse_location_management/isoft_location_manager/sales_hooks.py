@@ -85,7 +85,12 @@ def validate(doc, method=None):
 		if row.get(alloc.ALLOCATION_FIELD):
 			# a split line has to add up to the line and come off locations that have it
 			alloc.validate_row(row, row.warehouse, row.idx, strict=False)
-		alloc.require_settled(row, row.warehouse, row.idx, direction)
+			alloc.sync_primary(row)
+		# Only when it is actually going out. A draft is allowed to be unfinished — that
+		# is what a draft is — and a line left for somebody to choose has to be saveable
+		# while they are choosing.
+		if doc.docstatus == 1:
+			alloc.require_settled(row, row.warehouse, row.idx, direction)
 
 
 # ======================================================================
@@ -147,6 +152,11 @@ def resolve_row_locations(doc, persist=False, check_stock=True):
 			continue
 		qty = abs(_row_qty(row))
 		if qty <= 0 or not is_warehouse_enabled(row.warehouse):
+			continue
+
+		# Several locations could supply this, none of them declared: that is a decision,
+		# and guessing at it puts goods on the counter that came off a shelf nobody chose.
+		if alloc.needs_a_choice(row.warehouse, row.item_code, qty):
 			continue
 
 		rows, short = alloc.top_up(

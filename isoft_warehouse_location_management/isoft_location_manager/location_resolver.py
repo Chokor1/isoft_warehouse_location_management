@@ -184,16 +184,21 @@ def _resolve_out(
 	if qty > TOL and not best["covers"]:
 		return _result("split", best, candidates, _("no single location covers this line"), _split(candidates, qty))
 
+	# A location the item declares as its pick face is an answer somebody already gave,
+	# so it is not a choice to make again.
 	if declared and best["location"] == declared:
-		reason = _("the item's pick location in this warehouse")
-	else:
-		covering = [c for c in candidates if c["covers"] and not c["is_unassigned"]]
-		reason = (
-			_("highest priority location that covers this line")
-			if len(covering) > 1
-			else _("only location that covers this line")
+		return _result(
+			"suggested", best, candidates,
+			_("the item's pick location in this warehouse"), None, needs_choice=False,
 		)
-	return _result("suggested", best, candidates, reason, None)
+
+	covering = [c for c in candidates if c["covers"] and not c["is_unassigned"]]
+	reason = (
+		_("highest priority location that covers this line")
+		if len(covering) > 1
+		else _("only location that covers this line")
+	)
+	return _result("suggested", best, candidates, reason, None, needs_choice=len(covering) > 1)
 
 
 # ======================================================================
@@ -350,9 +355,13 @@ def _pin(location, locations, reason, balances):
 	return _result("locked", _cand(location, locations, balances), [_cand(location, locations, balances)], reason, None)
 
 
-def _result(mode, best, candidates, reason, split):
+def _result(mode, best, candidates, reason, split, needs_choice=False):
 	return {
 		"mode": mode,
+		# Several locations could supply this line and one merely leads. That is a
+		# decision, not a lookup — the difference between "there is one answer" and
+		# "somebody has to pick one".
+		"needs_choice": bool(needs_choice),
 		"location": best["location"] if best else None,
 		"location_label": best["label"] if best else None,
 		"is_unassigned": best.get("is_unassigned", 0) if best else 0,
@@ -366,6 +375,7 @@ def _result(mode, best, candidates, reason, split):
 def _empty(mode, reason):
 	return {
 		"mode": mode,
+		"needs_choice": False,
 		"location": None,
 		"location_label": None,
 		"is_unassigned": 0,

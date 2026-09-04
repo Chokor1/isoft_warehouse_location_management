@@ -1302,6 +1302,7 @@ SWITCHES = (
 	"enable_pos",
 	"enable_purchase",
 	"auto_resolve_locations",
+	"ask_when_ambiguous",
 	"allow_location_on_in",
 	"allow_pick_from_unassigned",
 	"require_location_on_out",

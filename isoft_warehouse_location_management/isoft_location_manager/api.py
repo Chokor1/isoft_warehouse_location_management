@@ -31,6 +31,7 @@ SETTING_DEFAULTS = {
 	"require_location_on_out": True,
 	"enable_purchase": True,
 	"allow_location_on_in": True,
+	"ask_when_ambiguous": True,
 }
 
 
@@ -77,6 +78,7 @@ def module_status():
 		"pos": is_enabled("pos"),
 		"purchase": is_enabled("purchase"),
 		"location_on_in": bool(setting("allow_location_on_in")),
+		"ask_when_ambiguous": bool(setting("ask_when_ambiguous")),
 	}
 
 

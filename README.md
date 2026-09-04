@@ -258,13 +258,24 @@ line will be taken from.
 An allocation that no longer adds up to its line (because the quantity was edited after
 it was settled) is not a decision to respect — it is a leftover, and it is recomputed.
 
+**When there is a real choice, somebody makes it.** `Settings → Ask which location when
+there is a choice`: if several locations could supply a line and the item names none of
+them as its pick location, nothing is filled in — the till and the row form show the
+locations and wait. A line with only one answer is still answered: one location, a
+declared pick location, or a line too big for any single location are all lookups, not
+decisions. Switched off, the highest-priority location is taken as before.
+
 **Stock going out must say where it came from.** `Settings → Require a location when stock
 leaves` refuses a line unless every unit of it is traceable to a location. It is about
 quantity, not choice: how many locations hold the item makes no difference — one or five,
 both pass. Whether it ever bites is decided by *Allow picking from unassigned stock*: while
 that is on the remainder counts as somewhere, so almost any line can be accounted for;
 switch it off and this becomes the rule that stops goods leaving before anyone has put them
-away.
+away. It is also what refuses a line somebody was asked about and left unanswered.
+
+It is checked when a document is **submitted**, not when it is saved: a draft is allowed
+to be unfinished, which is what a draft is, and a line waiting for somebody to choose has
+to be saveable while they choose.
 
 **Arrivals can be barred from being placed at all.** `Picking Settings → Choose a Location
 When Stock Arrives`, switched off, means goods always land in unassigned stock however the

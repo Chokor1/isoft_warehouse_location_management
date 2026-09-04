@@ -1902,6 +1902,8 @@ isoft_warehouse_location_management.App = class {
 					${this._switches([
 						['auto_resolve_locations', __('Work out where stock leaves from'),
 						 __('Outgoing lines settle themselves, so nobody is asked to name a location that has only one answer.')],
+						['ask_when_ambiguous', __('Ask which location when there is a choice'),
+						 __('When several locations could supply a line and the item names none of them as its pick location, leave it blank for somebody to choose. A line with only one answer is still filled in. Switched off, the highest-priority location is taken.')],
 						['allow_location_on_in', __('Let arrivals be put away on the document'),
 						 __('Switched off, arriving stock always lands in unassigned — whatever the document says — for a location manager to distribute here afterwards. The location column disappears from receipts and the Stock Entry target side.')],
 						['allow_pick_from_unassigned', __('Allow picking from unassigned stock'),

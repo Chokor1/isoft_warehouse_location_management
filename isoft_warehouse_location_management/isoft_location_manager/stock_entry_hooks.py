@@ -55,9 +55,11 @@ def validate(doc, method=None):
 	for row in doc.items:
 		if row.get(alloc.ALLOCATION_FIELD):
 			alloc.validate_row(row, row.s_warehouse, row.idx, strict=False)
+			alloc.sync_primary(row)
 		# only the source side is mandatory: a target left blank is unassigned stock,
 		# which is a true answer rather than a missing one
-		if row.get("s_warehouse"):
+		# a draft may be unfinished; what leaves the building may not
+		if row.get("s_warehouse") and doc.docstatus == 1:
 			alloc.require_settled(row, row.s_warehouse, row.idx, "out")
 		if row.get("custom_to_location"):
 			_check(row.custom_to_location, row.t_warehouse, row.idx, "To")
@@ -115,6 +117,9 @@ def before_submit(doc, method=None):
 		if alloc.is_settled(row, warehouse, "out"):
 			continue
 		if not warehouse or qty <= 0 or not is_warehouse_enabled(warehouse):
+			continue
+		# several locations could supply it and none is declared: that is a decision
+		if alloc.needs_a_choice(warehouse, row.item_code, qty):
 			continue
 		# a chosen location is where picking starts, not the only place it can come from
 		rows, short = alloc.top_up(warehouse, row.item_code, qty, row.get("custom_from_location"), "out")
