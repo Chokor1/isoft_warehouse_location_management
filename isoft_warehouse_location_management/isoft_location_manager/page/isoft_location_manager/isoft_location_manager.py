@@ -1292,23 +1292,54 @@ _BUCKET = {
 }
 
 
+# The switches that change how the module behaves. Every one is global — on or off for
+# the whole site — because a rule that holds for some items or some locations and not
+# others is a rule nobody can state, let alone rely on.
+SWITCHES = (
+	"enabled",
+	"enable_stock_entry",
+	"enable_delivery_note",
+	"enable_pos",
+	"enable_purchase",
+	"auto_resolve_locations",
+	"allow_location_on_in",
+	"allow_pick_from_unassigned",
+	"require_location_on_out",
+)
+
+
 @frappe.whitelist()
 def get_settings():
 	_require_admin()
-	doc = frappe.get_single("Picking Settings")
-	return {
-		"theme_color": doc.theme_color or "Blue",
-		"stock_validation": doc.stock_validation or "Block",
-		"default_warehouse": doc.default_warehouse,
-		"enabled_warehouses": [r.warehouse for r in doc.enabled_warehouses],
+	from isoft_warehouse_location_management.isoft_location_manager.api import setting
+
+	out = {
+		"theme_color": doc_theme(),
+		"stock_validation": frappe.db.get_single_value("Picking Settings", "stock_validation") or "Block",
+		"default_warehouse": frappe.db.get_single_value("Picking Settings", "default_warehouse"),
+		"enabled_warehouses": [
+			r.warehouse for r in frappe.get_single("Picking Settings").enabled_warehouses
+		],
 	}
+	# read through `setting`, so a switch that has never been saved reports its documented
+	# default rather than the 0 a missing Check row would otherwise look like
+	for name in SWITCHES:
+		out[name] = 1 if setting(name) else 0
+	return out
+
+
+def doc_theme():
+	return frappe.db.get_single_value("Picking Settings", "theme_color") or "Blue"
 
 
 @frappe.whitelist()
 def save_settings(theme_color=None, stock_validation=None, default_warehouse=None,
-		enabled_warehouses=None):
+		enabled_warehouses=None, switches=None):
 	_require_admin()
 	doc = frappe.get_single("Picking Settings")
+	for name, value in (frappe.parse_json(switches) if switches else {}).items():
+		if name in SWITCHES:
+			doc.set(name, cint(value))
 	if theme_color:
 		doc.theme_color = theme_color
 	if stock_validation:

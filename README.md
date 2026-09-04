@@ -475,7 +475,9 @@ Location` is readable by everyone and writable only by a Location Manager.
 the warehouses enabled in Settings. A manager with no warehouse permission sees every
 enabled warehouse.
 
-*Picking Settings* is System Manager only.
+*Settings* is System Manager only. Every switch there is on or off **for the whole
+site** — never per item or per location. A rule that holds for some items and not others
+is a rule nobody can state, let alone rely on.
 
 ## Settings
 

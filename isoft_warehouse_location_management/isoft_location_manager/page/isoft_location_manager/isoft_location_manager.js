@@ -1885,7 +1885,33 @@ isoft_warehouse_location_management.App = class {
 						<label>Default Warehouse<select id="ip-warehouse" class="ip-input">${this.warehouse_options(s.default_warehouse, '— none —')}</select></label>
 					</div>
 					<div class="ip-muted" style="font-size:12px;margin-top:6px">${__('Light / dark mode follows your Frappe theme setting.')}</div></div>
-				<div class="ip-card ip-fade" style="--i:1"><div class="ip-card-head"><h3>Enabled Warehouses</h3></div>
+				<div class="ip-card ip-fade" style="--i:1"><div class="ip-card-head"><h3>${__('Where locations apply')}</h3></div>
+					<div class="ip-muted" style="font-size:12px;margin-bottom:10px">${__(
+						'Each of these is on or off for the whole site — never per item or per location.')}</div>
+					${this._switches([
+						['enabled', __('Isoft Location Manager is on'),
+						 __('Switched off, nothing here asks anything of anyone. No location fields, no resolution, no ledger.')],
+						['enable_stock_entry', __('Stock Entry'), __('Issues, receipts and transfers.')],
+						['enable_delivery_note', __('Delivery Note and Sales Invoice'), __('Anything that ships goods.')],
+						['enable_pos', __('POS Awesome'), __('The till.')],
+						['enable_purchase', __('Purchase Receipt and Purchase Invoice'), __('Goods arriving from a supplier.')],
+					], s)}
+				</div>
+
+				<div class="ip-card ip-fade" style="--i:2"><div class="ip-card-head"><h3>${__('How locations are decided')}</h3></div>
+					${this._switches([
+						['auto_resolve_locations', __('Work out where stock leaves from'),
+						 __('Outgoing lines settle themselves, so nobody is asked to name a location that has only one answer.')],
+						['allow_location_on_in', __('Let arrivals be put away on the document'),
+						 __('Switched off, arriving stock always lands in unassigned — whatever the document says — for a location manager to distribute here afterwards. The location column disappears from receipts and the Stock Entry target side.')],
+						['allow_pick_from_unassigned', __('Allow picking from unassigned stock'),
+						 __('Switched off, stock has to be put away before it can be sold or issued.')],
+						['require_location_on_out', __('Require a location when stock leaves'),
+						 __('Refuses an outgoing line the ledger cannot account for.')],
+					], s)}
+				</div>
+
+				<div class="ip-card ip-fade" style="--i:3"><div class="ip-card-head"><h3>Enabled Warehouses</h3></div>
 					<div class="ip-muted" style="font-size:12px;margin-bottom:8px">${__('Only these warehouses (and their children) are used by Isoft Location Manager. Leave empty to enable all.')}</div>
 					<div class="ip-access-note">
 						<b>${__('Who can use Isoft Location Manager')}</b> ${__('is the Location Manager role, assigned on the User like any other role. Everyone else keeps working normally: locations still appear on the documents they already use.')}<br>
@@ -1894,8 +1920,24 @@ isoft_warehouse_location_management.App = class {
 					<div id="ip-enabled"></div></div>
 				<div class="ip-save-bar"><button class="ip-btn ip-btn-primary" id="ip-save"><i class="fa fa-save"></i> Save Settings</button></div>`);
 			this.enabled_ctrl = this._link_table('ip-enabled', s.enabled_warehouses, 'Warehouse', __('Select a warehouse'), { is_group: 0 });
+			this.$content.find('.ip-switch input').on('change', (e) => {
+				$(e.currentTarget).closest('.ip-switch').toggleClass('on', $(e.currentTarget).is(':checked'));
+			});
 			this.$content.find('#ip-save').on('click', () => this._save_settings());
 		});
+	}
+
+	/** A row of on/off switches, each with the sentence that says what it does. */
+	_switches(rows, s) {
+		const esc = frappe.utils.escape_html;
+		return `<div class="ip-switches">${rows.map(([key, label, note]) => `
+			<label class="ip-switch${s[key] ? ' on' : ''}">
+				<input type="checkbox" data-key="${key}" ${s[key] ? 'checked' : ''}>
+				<span class="ip-switch-text">
+					<span class="ip-switch-label">${esc(label)}</span>
+					<span class="ip-switch-note">${esc(note)}</span>
+				</span>
+			</label>`).join('')}</div>`;
 	}
 
 	_link_table(mountId, values, doctype, placeholder, filters, addLabel) {
@@ -1923,11 +1965,19 @@ isoft_warehouse_location_management.App = class {
 	}
 
 	_save_settings() {
+		const switches = {};
+		this.$content.find('.ip-switch input').each(function () {
+			switches[$(this).data('key')] = $(this).is(':checked') ? 1 : 0;
+		});
 		this.api('save_settings', {
 			stock_validation: this.$content.find('#ip-validation').val(),
 			default_warehouse: this.$content.find('#ip-warehouse').val(),
 			enabled_warehouses: JSON.stringify(this.enabled_ctrl.get_values() || []),
+			switches: JSON.stringify(switches),
 		}).then(() => {
+			// the form scripts cache the module's status per page load, so a switch that
+			// has just changed would otherwise keep its old answer until a reload
+			isoft_warehouse_location_management._status = null;
 			frappe.show_alert({ message: __('Settings saved'), indicator: 'green' });
 		});
 	}
