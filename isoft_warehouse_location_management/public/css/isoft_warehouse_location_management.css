@@ -12,8 +12,8 @@
  * Runtime theme colours are set as custom properties on :root by `apply_theme()`.
  */
 
-:root{--ip-primary:#2563eb;--ip-primary-dark:#1e40af;--ip-accent:#3b82f6;--ip-bg:#f6f8fb;--ip-card:#fff;--ip-border:#e6eaf0;--ip-text:#1f2937;--ip-muted:#6b7280}
-[data-theme="dark"]{--ip-bg:#1a1d23;--ip-card:#21242c;--ip-border:#32373f;--ip-text:#e6e8ec;--ip-muted:#9aa1ac}
+:root{--ip-line:#e2e8f0;--ip-subtle:#f1f5f9;--ip-border-strong:#cbd5e1;--ip-ok-bg:#f0fdfa;--ip-ok-border:#99f6e4;--ip-ok-strong:#ccfbf1;--ip-bad-bg:#fef2f2;--ip-bad-border:#fecaca;--ip-bad-text:#9b2f2f;--ip-primary:#2563eb;--ip-primary-dark:#1e40af;--ip-accent:#3b82f6;--ip-bg:#f6f8fb;--ip-card:#fff;--ip-border:#e6eaf0;--ip-text:#1f2937;--ip-muted:#6b7280}
+[data-theme="dark"]{--ip-line:#32373f;--ip-subtle:#272b33;--ip-border-strong:#454b56;--ip-ok-bg:#0f2620;--ip-ok-border:#1f5f52;--ip-ok-strong:#13342c;--ip-bad-bg:#2a1719;--ip-bad-border:#5f2b2e;--ip-bad-text:#f0a3a3;--ip-bg:#1a1d23;--ip-card:#21242c;--ip-border:#32373f;--ip-text:#e6e8ec;--ip-muted:#9aa1ac}
 .ip-root{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--ip-bg);color:var(--ip-text);padding:18px;min-height:82vh}
 .ip-drawer-overlay{color:var(--ip-text)}
 .ip-bar{display:flex;align-items:center;gap:16px;background:var(--ip-card);border:1px solid var(--ip-border);border-radius:14px;padding:12px 18px;margin-bottom:18px;box-shadow:0 6px 22px rgba(17,24,39,.06);flex-wrap:wrap;position:sticky;top:0;z-index:1040}
@@ -217,7 +217,7 @@
 .ip-reqcard-foot{margin-top:8px}
 .ip-pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
 .ip-pill.green{background:#dcfce7;color:#166534}.ip-pill.blue{background:#dbeafe;color:#1e40af}
-.ip-pill.amber{background:#fef3c7;color:#92400e}.ip-pill.grey{background:#f1f5f9;color:#475569}
+.ip-pill.amber{background:#fef3c7;color:#92400e}.ip-pill.grey{background:var(--ip-subtle);color:var(--ip-muted)}
 .ip-btn{border:none;border-radius:9px;padding:9px 15px;font-size:13px;font-weight:600;cursor:pointer;transition:all .18s;display:inline-flex;align-items:center;gap:7px}
 .ip-btn-primary{background:var(--ip-primary);color:#fff;box-shadow:0 4px 11px rgba(37,99,235,.28)}
 .ip-btn-primary:hover{background:var(--ip-primary-dark);transform:translateY(-1px)}
@@ -412,12 +412,12 @@
    headers; Layout drops the stock detail and shows the map. */
 
 .ip-viewtoggle { display: inline-flex; border: 1px solid var(--ip-line, #e2e8f0);
-  border-radius: 8px; overflow: hidden; background: #fff; }
+  border-radius: 8px; overflow: hidden; background: var(--ip-card); }
 .ip-viewtoggle .ip-vt { border: 0; background: transparent; padding: 6px 12px;
-  font-size: 12px; font-weight: 600; color: #64748b; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--ip-muted); cursor: pointer;
   display: inline-flex; align-items: center; gap: 6px; transition: background .15s, color .15s; }
 .ip-viewtoggle .ip-vt + .ip-vt { border-left: 1px solid var(--ip-line, #e2e8f0); }
-.ip-viewtoggle .ip-vt:hover { background: #f1f5f9; color: #0f172a; }
+.ip-viewtoggle .ip-vt:hover { background: var(--ip-subtle); color: var(--ip-text); }
 .ip-viewtoggle .ip-vt.on { background: #0f766e; color: #fff; }
 .ip-zone-filter { max-width: 190px; }
 
@@ -426,74 +426,74 @@
 .ip-zonerow-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px 2px; }
 .ip-zonerow-title { font-size: 12px; font-weight: 700; letter-spacing: .06em;
   text-transform: uppercase; color: #0f766e; }
-.ip-zonerow-meta { font-size: 11px; color: #94a3b8; }
-.ip-zone-unfiled .ip-zonerow-title, .ip-zone-unfiled .ip-zone-title { color: #94a3b8; }
+.ip-zonerow-meta { font-size: 11px; color: var(--ip-muted); }
+.ip-zone-unfiled .ip-zonerow-title, .ip-zone-unfiled .ip-zone-title { color: var(--ip-muted); }
 
 /* Layout view */
 .ip-layout { display: flex; flex-direction: column; gap: 16px; }
 .ip-zone { border: 1px solid var(--ip-line, #e2e8f0); border-radius: 12px;
-  background: #fff; padding: 12px 14px 14px; transition: border-color .15s, background .15s; }
-.ip-zone.can-drop { border-color: #99f6e4; background: #f0fdfa; }
-.ip-zone.is-drop-target { border-color: #0f766e; background: #ccfbf1; }
+  background: var(--ip-card); padding: 12px 14px 14px; transition: border-color .15s, background .15s; }
+.ip-zone.can-drop { border-color: var(--ip-ok-border); background: var(--ip-ok-bg); }
+.ip-zone.is-drop-target { border-color: #0f766e; background: var(--ip-ok-strong); }
 .ip-zone-head { display: flex; align-items: baseline; justify-content: space-between;
   gap: 12px; margin-bottom: 10px; }
-.ip-zone-title { font-size: 13px; font-weight: 700; color: #0f172a; }
-.ip-zone-meta { font-size: 11px; color: #94a3b8; }
+.ip-zone-title { font-size: 13px; font-weight: 700; color: var(--ip-text); }
+.ip-zone-meta { font-size: 11px; color: var(--ip-muted); }
 .ip-zone-body { display: grid; gap: 10px;
   grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); }
 
 .ip-tile { border: 1px solid var(--ip-line, #e2e8f0); border-radius: 10px; padding: 9px 10px;
-  background: #fff; cursor: default; transition: box-shadow .15s, transform .12s, border-color .15s; }
+  background: var(--ip-card); cursor: default; transition: box-shadow .15s, transform .12s, border-color .15s; }
 .ip-tile-move { cursor: grab; }
-.ip-tile:hover { border-color: #cbd5e1; box-shadow: 0 2px 8px rgba(15, 23, 42, .07); }
+.ip-tile:hover { border-color: var(--ip-border-strong); box-shadow: 0 2px 8px rgba(15, 23, 42, .07); }
 .ip-tile.is-dragging { opacity: .45; transform: scale(.97); }
 /* carrying an item card: every location that could take it says so */
-.ip-tile.can-drop { border-color: #99f6e4; background: #f0fdfa; }
-.ip-tile.is-drop-target { border-color: #0f766e; background: #ccfbf1;
+.ip-tile.can-drop { border-color: var(--ip-ok-border); background: var(--ip-ok-bg); }
+.ip-tile.is-drop-target { border-color: #0f766e; background: var(--ip-ok-strong);
   box-shadow: 0 0 0 2px rgba(15, 118, 110, .18); }
-.ip-tile.is-empty { background: #f8fafc; }
+.ip-tile.is-empty { background: var(--ip-subtle); }
 .ip-tile-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.ip-tile-code { font-weight: 700; font-size: 12.5px; color: #0f172a; }
-.ip-tile-edit { border: 0; background: transparent; color: #94a3b8; cursor: pointer;
+.ip-tile-code { font-weight: 700; font-size: 12.5px; color: var(--ip-text); }
+.ip-tile-edit { border: 0; background: transparent; color: var(--ip-muted); cursor: pointer;
   padding: 2px 4px; border-radius: 5px; opacity: 0; transition: opacity .15s, color .15s; }
 .ip-tile:hover .ip-tile-edit { opacity: 1; }
-.ip-tile-edit:hover { color: #0f766e; background: #f1f5f9; }
+.ip-tile-edit:hover { color: #0f766e; background: var(--ip-subtle); }
 .ip-tile-del { border: 0; background: transparent; color: #cbd5e1; cursor: pointer;
   padding: 2px 4px; border-radius: 5px; opacity: 0; transition: opacity .15s, color .15s; }
 .ip-tile:hover .ip-tile-del { opacity: 1; }
-.ip-tile-del:hover { color: #dc2626; background: #fef2f2; }
+.ip-tile-del:hover { color: #dc2626; background: var(--ip-bad-bg); }
 
 /* deleting a location: the trash sits beside the pencil, and stays quiet until hover */
 .ip-col-del { border: 0; background: transparent; color: #cbd5e1; cursor: pointer;
   padding: 2px 5px; border-radius: 5px; transition: color .15s, background .15s; }
-.ip-col:hover .ip-col-del { color: #94a3b8; }
-.ip-col-del:hover { color: #dc2626; background: #fef2f2; }
+.ip-col:hover .ip-col-del { color: var(--ip-muted); }
+.ip-col-del:hover { color: #dc2626; background: var(--ip-bad-bg); }
 .ip-del-items { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; }
-.ip-del-items .ip-muted { color: #94a3b8; }
+.ip-del-items .ip-muted { color: var(--ip-muted); }
 .ip-del-warn { color: #b45309; }
 
 /* per-item actions inside the location editor */
 .ip-loc-rowacts { display: flex; align-items: center; gap: 6px; }
 .ip-loc-rowacts .ip-loc-return { flex: 1; }
-.ip-loc-drop { flex: none; border: 1px solid var(--ip-line, #e2e8f0); background: #fff;
+.ip-loc-drop { flex: none; border: 1px solid var(--ip-line, #e2e8f0); background: var(--ip-card);
   color: #cbd5e1; border-radius: 5px; padding: 3px 7px; cursor: pointer;
   transition: color .15s, border-color .15s, background .15s; }
-.ip-loc-drop:hover { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
-.ip-tile-name { font-size: 11px; color: #64748b; margin-top: 1px;
+.ip-loc-drop:hover { color: #dc2626; border-color: var(--ip-bad-border); background: var(--ip-bad-bg); }
+.ip-tile-name { font-size: 11px; color: var(--ip-muted); margin-top: 1px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ip-tile-stats { display: flex; align-items: baseline; gap: 6px; margin-top: 6px; }
-.ip-tile-qty { font-size: 16px; font-weight: 700; color: #0f172a; line-height: 1; }
+.ip-tile-qty { font-size: 16px; font-weight: 700; color: var(--ip-text); line-height: 1; }
 .ip-tile.is-empty .ip-tile-qty { color: #cbd5e1; }
-.ip-tile-items { font-size: 11px; color: #94a3b8; }
-.ip-tile-type { font-size: 10px; color: #94a3b8; margin-top: 6px;
+.ip-tile-items { font-size: 11px; color: var(--ip-muted); }
+.ip-tile-type { font-size: 10px; color: var(--ip-muted); margin-top: 6px;
   text-transform: uppercase; letter-spacing: .04em; }
 
 /* Zone manager */
-.ip-zone-note { font-size: 12px; color: #64748b; margin-bottom: 10px; line-height: 1.5; }
+.ip-zone-note { font-size: 12px; color: var(--ip-muted); margin-bottom: 10px; line-height: 1.5; }
 .ip-zone-table td { vertical-align: middle; }
 .ip-z-del { border: 0; background: transparent; color: #cbd5e1; font-size: 17px;
   line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 5px; }
-.ip-z-del:hover { color: #dc2626; background: #fef2f2; }
+.ip-z-del:hover { color: #dc2626; background: var(--ip-bad-bg); }
 .ip-zone-new { display: flex; gap: 8px; align-items: center; margin-top: 12px;
   padding-top: 12px; border-top: 1px solid var(--ip-line, #e2e8f0); }
 .ip-zone-new .ip-z-label { flex: 1; }
@@ -508,14 +508,14 @@
 /* Two panels side by side: bringing a warehouse in, and taking it out. What each acts
    on is chosen inside it, rather than putting the whole page into a mode. */
 .ip-tsplit { display: grid; grid-template-columns: 1.15fr 1fr; gap: 18px; align-items: start; }
-.ip-tpanel { border: 1px solid var(--ip-line, #e2e8f0); border-radius: 12px; background: #fff;
+.ip-tpanel { border: 1px solid var(--ip-line, #e2e8f0); border-radius: 12px; background: var(--ip-card);
   overflow: hidden; }
 .ip-tpanel-head { padding: 15px 18px 13px; border-bottom: 1px solid var(--ip-line, #e2e8f0);
-  background: #fbfdfd; }
-.ip-tpanel-head h3 { margin: 0 0 4px; font-size: 14px; font-weight: 700; color: #0f172a;
+  background: var(--ip-subtle); }
+.ip-tpanel-head h3 { margin: 0 0 4px; font-size: 14px; font-weight: 700; color: var(--ip-text);
   display: flex; align-items: center; gap: 8px; }
 .ip-tpanel-head h3 .fa { color: #0f766e; font-size: 13px; }
-.ip-tpanel-head p { margin: 0; font-size: 11.5px; line-height: 1.55; color: #64748b; }
+.ip-tpanel-head p { margin: 0; font-size: 11.5px; line-height: 1.55; color: var(--ip-muted); }
 .ip-tpanel-body { padding: 16px 18px 18px; }
 
 .ip-steps { list-style: none; counter-reset: step; margin: 0; padding: 16px 18px 6px; }
@@ -527,42 +527,42 @@
   width: 1px; background: var(--ip-line, #e2e8f0); }
 .ip-steps > li:last-child { padding-bottom: 4px; }
 .ip-steps > li:last-child::after { display: none; }
-.ip-step-title { display: block; font-size: 12.5px; font-weight: 600; color: #0f172a;
+.ip-step-title { display: block; font-size: 12.5px; font-weight: 600; color: var(--ip-text);
   margin-bottom: 8px; }
-.ip-step-note { font-size: 11.5px; line-height: 1.55; color: #64748b; }
+.ip-step-note { font-size: 11.5px; line-height: 1.55; color: var(--ip-muted); }
 
 /* what a side acts on */
 .ip-layers { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .ip-layer { display: flex; align-items: flex-start; gap: 9px; margin: 0; cursor: pointer;
   border: 1px solid var(--ip-line, #e2e8f0); border-radius: 8px; padding: 8px 11px;
   transition: border-color .15s, background .15s; }
-.ip-layer:hover { border-color: #cbd5e1; background: #fbfdfd; }
-.ip-layer.on { border-color: #99f6e4; background: #f0fdfa; }
+.ip-layer:hover { border-color: var(--ip-border-strong); background: var(--ip-subtle); }
+.ip-layer.on { border-color: var(--ip-ok-border); background: var(--ip-ok-bg); }
 .ip-layer input { margin: 2px 0 0; flex: none; }
 .ip-layer-text { display: flex; flex-direction: column; gap: 1px; }
-.ip-layer-label { font-size: 12.5px; font-weight: 600; color: #0f172a; }
-.ip-layer-note { font-size: 11px; color: #64748b; }
+.ip-layer-label { font-size: 12.5px; font-weight: 600; color: var(--ip-text); }
+.ip-layer-note { font-size: 11px; color: var(--ip-muted); }
 
 .ip-filepick { display: flex; align-items: center; gap: 9px; margin: 0; cursor: pointer;
-  border: 1px dashed #cbd5e1; border-radius: 8px; padding: 11px 13px; background: #fbfdfd;
+  border: 1px dashed #cbd5e1; border-radius: 8px; padding: 11px 13px; background: var(--ip-subtle);
   transition: border-color .15s, background .15s; }
-.ip-filepick:hover { border-color: #0f766e; background: #f0fdfa; }
+.ip-filepick:hover { border-color: #0f766e; background: var(--ip-ok-bg); }
 .ip-filepick input { display: none; }
-.ip-filepick .fa { color: #94a3b8; }
-.ip-filepick-label { font-size: 12px; color: #475569; overflow: hidden;
+.ip-filepick .fa { color: var(--ip-muted); }
+.ip-filepick-label { font-size: 12px; color: var(--ip-muted); overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 
 /* what the file would do */
 .ip-t-result { padding: 0 18px 18px; }
 .ip-t-report { border: 1px solid var(--ip-line, #e2e8f0); border-radius: 10px; padding: 12px 14px; }
-.ip-t-report.is-ok { border-color: #99f6e4; background: #f0fdfa; }
-.ip-t-report.is-bad { border-color: #fecaca; background: #fef2f2; }
+.ip-t-report.is-ok { border-color: var(--ip-ok-border); background: var(--ip-ok-bg); }
+.ip-t-report.is-bad { border-color: var(--ip-bad-border); background: var(--ip-bad-bg); }
 .ip-t-report-head { font-size: 12.5px; margin-bottom: 4px; }
 .ip-t-sheet { border-top: 1px solid rgba(15, 23, 42, .07); padding: 8px 0 2px; margin-top: 6px; }
 .ip-t-sheet:first-of-type { border-top: 0; }
 .ip-t-sheet-head { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
 .ip-t-sheet-head .ip-muted { font-size: 11px; }
-.ip-t-problems { margin: 6px 0 0; padding-left: 17px; font-size: 11.5px; color: #9b2f2f;
+.ip-t-problems { margin: 6px 0 0; padding-left: 17px; font-size: 11.5px; color: var(--ip-bad-text);
   line-height: 1.6; max-height: 220px; overflow: auto; }
 .ip-t-report .ip-btn { margin-top: 12px; }
 .ip-t-bad { font-size: 12.5px; color: #b45309; }
@@ -576,9 +576,9 @@
 .ip-switch { display: flex; align-items: flex-start; gap: 10px; margin: 0; cursor: pointer;
   border: 1px solid var(--ip-line, #e2e8f0); border-radius: 8px; padding: 10px 12px;
   transition: border-color .15s, background .15s; }
-.ip-switch:hover { border-color: #cbd5e1; background: #fbfdfd; }
-.ip-switch.on { border-color: #99f6e4; background: #f0fdfa; }
+.ip-switch:hover { border-color: var(--ip-border-strong); background: var(--ip-subtle); }
+.ip-switch.on { border-color: var(--ip-ok-border); background: var(--ip-ok-bg); }
 .ip-switch input { margin: 2px 0 0; flex: none; }
 .ip-switch-text { display: flex; flex-direction: column; gap: 2px; }
-.ip-switch-label { font-size: 12.5px; font-weight: 600; color: #0f172a; }
-.ip-switch-note { font-size: 11.5px; color: #64748b; line-height: 1.5; }
+.ip-switch-label { font-size: 12.5px; font-weight: 600; color: var(--ip-text); }
+.ip-switch-note { font-size: 11.5px; color: var(--ip-muted); line-height: 1.5; }
