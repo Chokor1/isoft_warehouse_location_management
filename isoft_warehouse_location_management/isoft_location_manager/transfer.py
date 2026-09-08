@@ -360,10 +360,25 @@ def _check_stock(rows, scope, pending=None):
 		)
 		asked = sum(flt(p["qty"]) for p in group)
 		if asked + others > on_hand + 0.001:
+			# Naming where the rest already sits is the whole answer: a sheet only ever
+			# draws from unassigned stock, so the fix is always to include a row for the
+			# location it should come out of.
+			held = frappe.db.sql(
+				"""select wl.location_code, ls.qty from `tabLocation Stock` ls
+				   join `tabWarehouse Location` wl on wl.name = ls.location
+				   where ls.warehouse=%s and ls.item_code=%s and ls.location not in %s
+				     and ls.qty > 0 order by ls.qty desc""",
+				(wh, item, touched),
+			)
+			where = ", ".join("%s (%s)" % (c, flt(q)) for c, q in held[:4])
+			if len(held) > 4:
+				where += _(" and {0} more").format(len(held) - 4)
 			problems.append(
-				_("{0} in {1}: the file places {2} but the warehouse holds {3}"
-				  " ({4} is already on locations this file does not mention)").format(
-					item, wh, asked, on_hand, others
+				_("{0} in {1}: the file places {2}, but only {3} is not yet on a location."
+				  " The other {4} is already on {5}. This file does not mention those, so"
+				  " they stay as they are — to move stock onto another location, give the"
+				  " one it comes from its own row, with its new lower quantity.").format(
+					item, wh, asked, flt(on_hand - others), others, where or _("other locations")
 				)
 			)
 	return plan, problems
