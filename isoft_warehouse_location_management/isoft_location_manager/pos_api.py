@@ -17,7 +17,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
-from isoft_warehouse_location_management.isoft_location_manager.api import is_enabled
+from isoft_warehouse_location_management.isoft_location_manager.api import is_enabled, is_warehouse_enabled
 
 MAX_ITEMS = 2000
 
@@ -36,7 +36,14 @@ def get_item_location_options(warehouse, item_code, qty=0, preferred=None):
 	the plan for covering it. The cashier is never made to choose, but they should be
 	able to see that a sale of 107 is coming off two shelves rather than one.
 	"""
+	# A warehouse left off the enabled list is not managed here at all, so the till has
+	# nothing to say about it. Without this the item form showed "not on any location
+	# in this warehouse" — which reads as a warning about missing setup, when in fact
+	# that warehouse is deliberately not tracked. Every other integration already checks
+	# this; the POS path was the one that did not.
 	if not is_enabled("pos") or not warehouse or not item_code:
+		return {"enabled": 0, "default": None, "options": []}
+	if not is_warehouse_enabled(warehouse):
 		return {"enabled": 0, "default": None, "options": []}
 
 	from isoft_warehouse_location_management.isoft_location_manager.location_resolver import resolve_one
