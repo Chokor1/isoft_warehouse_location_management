@@ -2,9 +2,11 @@
 # Author: Abbass Chokor
 # For license information, please see license.txt
 
+import re
+
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, nowdate
+from frappe.utils import cint, cstr, flt, nowdate
 
 
 # ======================================================================
@@ -116,6 +118,55 @@ def enabled_warehouse_set():
 	for wh in rows:
 		out |= _wh_descendants(wh)
 	return out
+
+
+_DIGITS = re.compile(r"(\d+)")
+
+
+def natural_key(text):
+	"""Sort MOVEL 2 before MOVEL 10, not between MOVEL 1 and MOVEL 10.
+
+	Codes are written for people, and people number things without padding. Comparing
+	them as plain strings puts "10" next to "1" because it compares "1" with "0" — which
+	is correct for text and wrong for a shelf. Splitting on runs of digits and comparing
+	those runs as numbers gives the order a person would have written down.
+
+	The split always alternates text, number, text, so two keys can never compare a
+	string against an int at the same position.
+	"""
+	parts = _DIGITS.split(cstr(text or ""))
+	return [int(p) if p.isdigit() else p.lower() for p in parts]
+
+
+def natural_sorted(rows, *fields):
+	"""Re-sort rows fetched in SQL order by one or more code fields, naturally."""
+	return sorted(rows, key=lambda r: [natural_key(r.get(f)) for f in fields])
+
+
+def sort_locations(rows):
+	"""Warehouse, then the unassigned bucket last, then pick priority, then the code.
+
+	The same precedence the SQL used; only the code compares naturally now.
+	"""
+	return sorted(rows, key=lambda r: (
+		natural_key(r.get("warehouse")),
+		cint(r.get("is_unassigned")),
+		flt(r.get("pick_priority") or 0),
+		natural_key(r.get("location_code") or r.get("location") or r.get("name")),
+	))
+
+
+def sort_zones(rows):
+	"""Warehouse, then the code, read the way a person wrote it.
+
+	There is no hand-kept order field any more. Zones are named MOVEL 1..MOVEL 10 and
+	that naming already carries the order; asking someone to also number them is asking
+	them to say the same thing twice and to keep the two in step forever.
+	"""
+	return sorted(rows, key=lambda r: (
+		natural_key(r.get("warehouse")),
+		natural_key(r.get("zone_code")),
+	))
 
 
 def is_warehouse_enabled(warehouse):

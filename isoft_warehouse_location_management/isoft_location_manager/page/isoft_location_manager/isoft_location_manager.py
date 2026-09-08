@@ -6,6 +6,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from isoft_warehouse_location_management.isoft_location_manager.api import sort_locations, sort_zones
 from isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_location.warehouse_location import UNASSIGNED_CODE
 
 # Opening this app is a Location Manager's job. Everyone else still sees and chooses
@@ -590,7 +591,7 @@ def get_ledger_locations(warehouse=None):
 	)
 	if scope is not None:
 		rows = [r for r in rows if r.warehouse in scope]
-	return rows
+	return sort_locations(rows)
 
 
 # ======================================================================
@@ -863,6 +864,7 @@ def get_locations_with_items(warehouse=None, search=None):
 	)
 	if scope is not None:
 		locations = [s for s in locations if s.warehouse in scope]
+	locations = sort_locations(locations)
 
 	stock = frappe.get_all(
 		"Location Stock",
@@ -881,7 +883,7 @@ def get_locations_with_items(warehouse=None, search=None):
 		z.name: z
 		for z in frappe.get_all(
 			"Warehouse Zone",
-			fields=["name", "zone_code", "zone_name", "warehouse", "sequence"],
+			fields=["name", "zone_code", "zone_name", "warehouse"],
 			limit_page_length=0,
 		)
 	}
@@ -915,7 +917,6 @@ def get_locations_with_items(warehouse=None, search=None):
 				"zone": s.zone,
 				"zone_code": (zone_meta.get(s.zone) or {}).get("zone_code"),
 				"zone_name": (zone_meta.get(s.zone) or {}).get("zone_name"),
-				"zone_seq": cint((zone_meta.get(s.zone) or {}).get("sequence")),
 				"items": items,
 				"item_count": len(items),
 				"listed": len(items),
@@ -990,12 +991,12 @@ def _unassigned_location_row(location, search=None):
 def get_locations_for_warehouse(warehouse):
 	"""Active locations belonging to a specific warehouse (for pickers)."""
 	_require_access()
-	return frappe.get_all(
+	return sort_locations(frappe.get_all(
 		"Warehouse Location",
 		filters={"is_active": 1, "warehouse": warehouse},
 		fields=["name", "location_code", "location_name", "is_unassigned", "location_type", "pick_priority"],
 		order_by="is_unassigned asc, pick_priority asc, location_code asc",
-	)
+	))
 
 
 @frappe.whitelist()
@@ -1368,10 +1369,11 @@ def get_zones(warehouse=None, with_counts=1):
 	zones = frappe.get_all(
 		"Warehouse Zone",
 		filters=filters,
-		fields=["name", "zone_code", "zone_name", "warehouse", "sequence", "description", "is_active"],
-		order_by="warehouse asc, sequence asc, zone_code asc",
+		fields=["name", "zone_code", "zone_name", "warehouse", "description", "is_active"],
+		order_by="warehouse asc, zone_code asc",
 		limit_page_length=0,
 	)
+	zones = sort_zones(zones)
 	if not cint(with_counts) or not zones:
 		return zones
 
@@ -1390,7 +1392,7 @@ def get_zones(warehouse=None, with_counts=1):
 
 
 @frappe.whitelist()
-def save_zone(warehouse, zone_code, zone_name=None, description=None, sequence=0,
+def save_zone(warehouse, zone_code, zone_name=None, description=None,
 		is_active=1, name=None):
 	"""Create or rename a zone. The code is the identity; the name is for reading."""
 	_require_preparer()
@@ -1406,7 +1408,6 @@ def save_zone(warehouse, zone_code, zone_name=None, description=None, sequence=0
 	doc.zone_code = (zone_code or "").strip().upper()
 	doc.zone_name = (zone_name or "").strip() or doc.zone_code.title()
 	doc.description = description
-	doc.sequence = cint(sequence)
 	doc.is_active = cint(is_active)
 	doc.flags.ignore_permissions = True
 	doc.save(ignore_permissions=True)

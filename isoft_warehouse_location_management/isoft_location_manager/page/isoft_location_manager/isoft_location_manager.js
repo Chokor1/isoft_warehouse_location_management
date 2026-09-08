@@ -828,15 +828,17 @@ isoft_warehouse_location_management.App = class {
 				groups.set(key, {
 					zone: s.zone || '',
 					label: s.zone ? (s.zone_name || s.zone_code || s.zone) : __('Not in a zone'),
-					seq: s.zone ? (s.zone_seq || 0) : 1e9,
+					seq: s.zone ? 0 : 1e9,   // only "not in a zone" is pushed to the end
 					warehouse: s.warehouse,
 					locations: [],
 				});
 			}
 			groups.get(key).locations.push(s);
 		});
+		// The zone code carries the order; numeric: true so MOVEL 2 comes before MOVEL 10.
+		// Zones with no zone at all sort last, which is what the 1e9 sentinel is for.
 		return Array.from(groups.values()).sort((a, b) => a.seq - b.seq
-			|| String(a.label).localeCompare(String(b.label)));
+			|| String(a.label).localeCompare(String(b.label), undefined, { numeric: true }));
 	}
 
 	paint_locations($wrap) {
@@ -1014,7 +1016,6 @@ isoft_warehouse_location_management.App = class {
 						<th style="width:110px">${esc(__('Code'))}</th>
 						<th>${esc(__('Name'))}</th>
 						<th style="width:180px">${esc(__('Warehouse'))}</th>
-						<th style="width:80px">${esc(__('Order'))}</th>
 						<th style="width:96px">${esc(__('Locations'))}</th>
 						<th style="width:40px"></th>
 					</tr></thead>
@@ -1023,10 +1024,9 @@ isoft_warehouse_location_management.App = class {
 							<td><b>${esc(z.zone_code)}</b></td>
 							<td><input class="ip-input ip-z-name" value="${esc(z.zone_name || '')}"></td>
 							<td class="ip-muted">${esc(z.warehouse)}</td>
-							<td><input type="number" class="ip-input ip-z-seq" value="${cint(z.sequence)}"></td>
 							<td class="ip-muted">${esc(__('{0} filed', [cint(z.location_count)]))}</td>
 							<td><button class="ip-z-del" title="${esc(__('Delete'))}">&times;</button></td>
-						</tr>`).join('') : `<tr><td colspan="6" class="ip-muted" style="padding:14px">${
+						</tr>`).join('') : `<tr><td colspan="5" class="ip-muted" style="padding:14px">${
 							esc(__('No zones yet. Add the first one below.'))}</td></tr>`}</tbody>
 				</table>
 				<div class="ip-zone-new">
@@ -1047,14 +1047,13 @@ isoft_warehouse_location_management.App = class {
 				}).then((r) => { if (r) load(); });
 			});
 
-			$body.find('.ip-z-name, .ip-z-seq').on('change', (e) => {
+			$body.find('.ip-z-name').on('change', (e) => {
 				const $tr = $(e.currentTarget).closest('tr');
 				const z = zones.find((x) => x.name === $tr.data('name'));
 				if (!z) return;
 				this.api('save_zone', {
 					name: z.name, warehouse: z.warehouse, zone_code: z.zone_code,
 					zone_name: $tr.find('.ip-z-name').val(),
-					sequence: cint($tr.find('.ip-z-seq').val()),
 				}).then(() => frappe.show_alert({ message: __('Saved'), indicator: 'green' }));
 			});
 

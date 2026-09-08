@@ -18,7 +18,7 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-from isoft_warehouse_location_management.isoft_location_manager.api import is_enabled, setting
+from isoft_warehouse_location_management.isoft_location_manager.api import is_enabled, natural_key, setting
 from isoft_warehouse_location_management.isoft_location_manager.doctype.location_stock.location_stock import (
 	bin_quantities,
 	location_balances,
@@ -126,7 +126,9 @@ def _resolve_out(
 	# then the priority someone set on it, then by name. Name rather than "biggest pile"
 	# because a picker walks the racks in order, and because a stable, predictable order
 	# is worth more than shaving a shelf off the occasional split.
-	candidates.sort(key=lambda c: (not c["covers"], c["priority"], c["location"]))
+	# Ties break on the code, and the code reads the way a person wrote it: MOVEL 2
+	# is walked before MOVEL 10, not after it.
+	candidates.sort(key=lambda c: (not c["covers"], c["priority"], natural_key(c["location"])))
 	if declared:
 		lead = next((c for c in candidates if c["location"] == declared), None)
 		if lead:

@@ -17,10 +17,15 @@ import frappe
 from frappe import _
 from frappe.utils import cint, cstr, flt
 
+from isoft_warehouse_location_management.isoft_location_manager.api import (
+	sort_locations,
+	sort_zones,
+)
+
 KINDS = ("zones", "locations", "stock")
 
 COLUMNS = {
-	"zones": ["warehouse", "zone_code", "zone_name", "sequence", "description"],
+	"zones": ["warehouse", "zone_code", "zone_name", "description"],
 	"locations": [
 		"warehouse", "location_code", "zone", "description",
 	],
@@ -34,7 +39,6 @@ NOTES = {
 	"warehouse": "The exact warehouse name, as ERPNext spells it. Must be a leaf warehouse.",
 	"zone_code": "Short code, unique inside the warehouse. Upper-cased automatically.",
 	"zone_name": "What people call it. Left blank, the code is used.",
-	"sequence": "Order the zones appear in. Lower comes first. Blank means 0.",
 	"description": "Optional. A note for whoever reads the record later.",
 	"location_code": "Short code, unique inside the warehouse — the label on the rack.",
 	"zone": "The zone code this location sits in. It must already exist — import zones first.",
@@ -44,7 +48,7 @@ NOTES = {
 }
 
 WIDTHS = {
-	"warehouse": 32, "zone_code": 14, "zone_name": 22, "sequence": 10, "description": 40,
+	"warehouse": 32, "zone_code": 14, "zone_name": 22, "description": 40,
 	"location_code": 16, "zone": 14,
 	"item_code": 22, "qty": 12,
 }
@@ -56,7 +60,7 @@ REQUIRED = {
 }
 
 SAMPLE = {
-	"zones": ["01 - Loja Alvalade - ITEC", "FRONT", "Front Aisle", "1", "Fast movers by the till"],
+	"zones": ["01 - Loja Alvalade - ITEC", "FRONT", "Front Aisle", "Fast movers by the till"],
 	"locations": ["01 - Loja Alvalade - ITEC", "A-01", "FRONT", "Reachable without a ladder"],
 	"stock": ["01 - Loja Alvalade - ITEC", "A-01", "ITEM-0001", "12"],
 }
@@ -136,40 +140,40 @@ def export_rows(kind, warehouse=None):
 
 	out = []
 	if kind == "zones":
-		for z in frappe.get_all(
+		for z in sort_zones(frappe.get_all(
 			"Warehouse Zone",
 			filters={"warehouse": warehouse} if warehouse else {},
-			fields=["warehouse", "zone_code", "zone_name", "sequence", "description"],
-			order_by="warehouse asc, sequence asc, zone_code asc",
+			fields=["warehouse", "zone_code", "zone_name", "description"],
+			order_by="warehouse asc, zone_code asc",
 			limit_page_length=0,
-		):
+		)):
 			if in_scope(z.warehouse):
-				out.append([z.warehouse, z.zone_code, z.zone_name, cint(z.sequence), z.description or ""])
+				out.append([z.warehouse, z.zone_code, z.zone_name, z.description or ""])
 
 	elif kind == "locations":
 		filters = {"is_unassigned": 0}
 		if warehouse:
 			filters["warehouse"] = warehouse
-		for l in frappe.get_all(
+		for l in sort_locations(frappe.get_all(
 			"Warehouse Location",
 			filters=filters,
 			fields=["warehouse", "location_code", "zone", "description"],
 			order_by="warehouse asc, location_code asc",
 			limit_page_length=0,
-		):
+		)):
 			if not in_scope(l.warehouse):
 				continue
 			zone_code = frappe.db.get_value("Warehouse Zone", l.zone, "zone_code") if l.zone else ""
 			out.append([l.warehouse, l.location_code, zone_code or "", l.description or ""])
 
 	else:
-		rows = frappe.get_all(
+		rows = sort_locations(frappe.get_all(
 			"Location Stock",
 			filters={"warehouse": warehouse} if warehouse else {},
 			fields=["warehouse", "location", "item_code", "qty"],
 			order_by="warehouse asc, location asc, item_code asc",
 			limit_page_length=0,
-		)
+		))
 		codes = {}
 		for r in rows:
 			if not in_scope(r.warehouse) or flt(r.qty) <= 0:
@@ -220,7 +224,6 @@ def _check_zones(rows, scope, pending=None):
 		# a cell that could not be read is a reason to leave the row out of the plan, not
 		# to quietly substitute a zero — the preview has to show what would really happen
 		before = len(problems)
-		_num(r.get("sequence"), _("sequence"), i, problems, minimum=0)
 		if len(problems) > before:
 			continue
 		existing = frappe.db.get_value("Warehouse Zone", {"warehouse": wh, "zone_code": code}, "name")
@@ -228,7 +231,6 @@ def _check_zones(rows, scope, pending=None):
 			"row": i, "action": "update" if existing else "create", "name": existing,
 			"warehouse": wh, "zone_code": code,
 			"zone_name": cstr(r.get("zone_name")).strip() or code.title(),
-			"sequence": cint(flt(cstr(r.get("sequence")).strip() or 0)),
 			"description": cstr(r.get("description")).strip(),
 		})
 	return plan, problems
@@ -426,7 +428,7 @@ def apply(kind, rows):
 			doc = frappe.get_doc("Warehouse Zone", p["name"]) if p["name"] else frappe.new_doc("Warehouse Zone")
 			doc.update({
 				"warehouse": p["warehouse"], "zone_code": p["zone_code"], "zone_name": p["zone_name"],
-				"sequence": p["sequence"], "description": p["description"], "is_active": 1,
+				"description": p["description"], "is_active": 1,
 			})
 			doc.flags.ignore_permissions = True
 			doc.save(ignore_permissions=True)
@@ -548,7 +550,7 @@ def _sheet_into(wb, kind, rows, with_sample=False):
 
 	# quantities and capacities are numbers, and should look like numbers
 	for c, col in enumerate(columns, start=1):
-		if col in ("qty", "sequence"):
+		if col == "qty":
 			for r in range(2, ws.max_row + 1):
 				ws.cell(row=r, column=c).number_format = "#,##0.###"
 

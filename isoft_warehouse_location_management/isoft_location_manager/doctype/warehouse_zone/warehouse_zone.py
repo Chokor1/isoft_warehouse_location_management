@@ -11,6 +11,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from isoft_warehouse_location_management.isoft_location_manager.api import sort_zones
+
 from isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_location.warehouse_location import (
 	warehouse_prefix,
 )
@@ -76,10 +78,10 @@ def zones_of(warehouse, active_only=True):
 	filters = {"warehouse": warehouse}
 	if active_only:
 		filters["is_active"] = 1
-	return frappe.get_all(
+	return sort_zones(frappe.get_all(
 		"Warehouse Zone",
 		filters=filters,
-		fields=["name", "zone_code", "zone_name", "warehouse", "sequence", "description", "is_active"],
-		order_by="sequence asc, zone_code asc",
+		fields=["name", "zone_code", "zone_name", "warehouse", "description", "is_active"],
+		order_by="zone_code asc",
 		limit_page_length=0,
-	)
+	))
