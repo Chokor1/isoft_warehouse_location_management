@@ -16,7 +16,15 @@
 [data-theme="dark"]{--ip-bg:#1a1d23;--ip-card:#21242c;--ip-border:#32373f;--ip-text:#e6e8ec;--ip-muted:#9aa1ac}
 .ip-root{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--ip-bg);color:var(--ip-text);padding:18px;min-height:82vh}
 .ip-drawer-overlay{color:var(--ip-text)}
-.ip-bar{display:flex;align-items:center;gap:16px;background:var(--ip-card);border:1px solid var(--ip-border);border-radius:14px;padding:12px 18px;margin-bottom:18px;box-shadow:0 6px 22px rgba(17,24,39,.06);flex-wrap:wrap}
+.ip-bar{display:flex;align-items:center;gap:16px;background:var(--ip-card);border:1px solid var(--ip-border);border-radius:14px;padding:12px 18px;margin-bottom:18px;box-shadow:0 6px 22px rgba(17,24,39,.06);flex-wrap:wrap;position:sticky;top:0;z-index:1040}
+/* The bar sticks to the top of the viewport. Two details keep it honest: it stays
+   under Bootstrap's .modal (1050) so dialogs are never behind it, and the ::before
+   paints the page background across the 18px of .ip-root padding above it, so rows
+   do not show through the gap on their way past. */
+.ip-bar::before{content:'';position:absolute;left:-19px;right:-19px;top:-19px;height:19px;background:var(--ip-bg)}
+/* Narrow screens wrap the bar onto three rows; pinning that much of a short
+   viewport costs more than it buys, so there it scrolls away like anything else. */
+@media (max-width:768px){.ip-bar{position:static}.ip-bar::before{display:none}}
 .ip-brand{display:flex;align-items:center;gap:12px}
 .ip-tabs{margin-left:auto}
 .ip-brand-logo{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(135deg,var(--ip-primary),var(--ip-accent));box-shadow:0 4px 12px rgba(37,99,235,.38)}
