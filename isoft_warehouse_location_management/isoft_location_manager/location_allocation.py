@@ -298,13 +298,43 @@ def require_settled(row, warehouse, idx=None, direction="out"):
 
 	rows = parse(row.get(ALLOCATION_FIELD)) or read_row(row)
 	short = qty - total(rows)
-	if short > 0.001:
-		frappe.throw(
-			_("Row #{0}: {1} of {2} has no location to come out of in {3}. "
-			  "Put it away first, or allow picking from unassigned stock in Picking Settings.").format(
-				idx or row.get("idx"), flt(short), row.get("item_code"), warehouse
-			)
+	if short <= 0.001:
+		return
+
+	idx = idx or row.get("idx")
+	item = row.get("item_code")
+
+	# Two very different situations end up here, and telling them apart is the whole
+	# point of the message. A line can be short because there is genuinely nothing to
+	# take — or because several locations hold the item, none is its declared pick
+	# face, and the settling step deliberately left it blank for a person to decide.
+	# Saying "put it away first" to someone whose stock is already put away sends them
+	# looking for a problem that is not there.
+	if needs_a_choice(warehouse, item, qty):
+		held = frappe.db.sql(
+			"""select wl.location_code, ls.qty from `tabLocation Stock` ls
+			   join `tabWarehouse Location` wl on wl.name = ls.location
+			   where ls.warehouse=%s and ls.item_code=%s and ls.qty > 0
+			     and wl.is_active = 1 and wl.is_unassigned = 0
+			   order by ls.qty desc""",
+			(warehouse, item),
 		)
+		where = ", ".join("%s (%s)" % (c, flt(q)) for c, q in held[:4])
+		if len(held) > 4:
+			where += _(" and {0} more").format(len(held) - 4)
+		frappe.throw(
+			_("Row #{0}: {1} is in more than one location in {2} and names none of them as "
+			  "its pick location, so nobody has said where it comes out of. Choose one on the "
+			  "row: {3}.").format(idx, item, warehouse, where or _("no active location")),
+			title=_("Say Where It Comes From"),
+		)
+
+	frappe.throw(
+		_("Row #{0}: {1} of {2} has no location to come out of in {3}. "
+		  "Put it away first, or allow picking from unassigned stock in Picking Settings.").format(
+			idx, flt(short), item, warehouse
+		)
+	)
 
 
 def validate_row(row, warehouse, idx=None, strict=True):
