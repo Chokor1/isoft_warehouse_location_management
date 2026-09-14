@@ -780,3 +780,19 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 }
 .ip-inv-moved{margin-top:3px;font-size:11.5px;font-weight:600;color:var(--ip-warn-text)}
 .ip-inv-table tr.is-moved td{background:rgba(180,83,9,.07)}
+
+/* Count sheet columns. The table spans the card, and without widths every column
+   shared the spare room, so each right-aligned number sat far from its header.
+   The number columns are now a fixed width and centred under their headers; the
+   item column takes whatever is left. */
+.ip-inv-num{text-align:center}
+/* .ip-table th sets text-align:left with a class and an element, which outranks a bare
+   class; these carry both so the headers centre over their values too. */
+.ip-inv-table th.ip-inv-num,.ip-inv-table td.ip-inv-num,
+.ip-inv-list .ip-table th.ip-inv-num,.ip-inv-list .ip-table td.ip-inv-num{text-align:center}
+.ip-inv-table th.ip-inv-num,.ip-inv-table td.ip-inv-num{width:150px}
+.ip-inv-table th:last-child,.ip-inv-table td.ip-inv-rowact{width:86px}
+.ip-inv-in{text-align:center}
+@media (max-width:700px){
+  .ip-inv-table th.ip-inv-num,.ip-inv-table td.ip-inv-num{width:104px}
+}
