@@ -25,10 +25,14 @@ isoft_warehouse_location_management.apply_chrome = function () {
 		$chrome.hide();
 		$('.layout-main-location-wrapper').css('margin-top', '0');
 		$('.page-container').css('padding-top', '0');
+		// The sidebar and the room the page leaves for it both hang off this class.
+		$('body').addClass('ip-standalone')
+			.toggleClass('ip-sb-collapsed', localStorage.getItem('ip_sidebar_collapsed') === '1');
 	} else {
 		$chrome.show();
 		$('.layout-main-location-wrapper').css('margin-top', '');
 		$('.page-container').css('padding-top', '');
+		$('body').removeClass('ip-standalone ip-sb-collapsed');
 	}
 };
 
@@ -41,6 +45,12 @@ frappe.pages['isoft-location-manager'].on_page_load = function (wrapper) {
 	if (!isoft_warehouse_location_management._chrome_bound) {
 		isoft_warehouse_location_management._chrome_bound = true;
 		$(window).on('hashchange', isoft_warehouse_location_management.apply_chrome);
+		// Routes set from code (frappe.set_route, links inside the desk) do not fire
+		// hashchange, so follow the router too: leaving must always give the desk back
+		// its navbar and its full width.
+		if (frappe.router && frappe.router.on) {
+			frappe.router.on('change', isoft_warehouse_location_management.apply_chrome);
+		}
 	}
 };
 
@@ -54,6 +64,7 @@ frappe.pages['isoft-location-manager'].on_page_hide = function () {
 	$(isoft_warehouse_location_management.CHROME).show();
 	$('.layout-main-location-wrapper').css('margin-top', '');
 	$('.page-container').css('padding-top', '');
+	$('body').removeClass('ip-standalone ip-sb-collapsed');
 };
 
 isoft_warehouse_location_management.App = class {
@@ -88,12 +99,24 @@ isoft_warehouse_location_management.App = class {
 	}
 
 	apply_theme() {
-		// Single fixed accent; light/dark comes from Frappe's own theme (data-theme on <html>).
-		const t = isoft_warehouse_location_management.THEMES.Blue;
-		const r = document.documentElement;
-		r.style.setProperty('--ip-primary', t.p);
-		r.style.setProperty('--ip-primary-dark', t.d);
-		r.style.setProperty('--ip-accent', t.a);
+		// One accent, tuned per mode as in Isoft Invenza; light/dark itself comes from
+		// Frappe's own theme (data-theme on <html>), and a switch made while the page is
+		// open is followed.
+		const set = () => {
+			const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+			const t = dark
+				? { p: '#3b82f6', d: '#2563eb', a: '#60a5fa' }
+				: isoft_warehouse_location_management.THEMES.Blue;
+			const r = document.documentElement;
+			r.style.setProperty('--ip-primary', t.p);
+			r.style.setProperty('--ip-primary-dark', t.d);
+			r.style.setProperty('--ip-accent', t.a);
+		};
+		set();
+		if (!isoft_warehouse_location_management._theme_observer && window.MutationObserver) {
+			isoft_warehouse_location_management._theme_observer = new MutationObserver(set);
+			isoft_warehouse_location_management._theme_observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+		}
 	}
 
 	// ------------------------------------------------------------------ shell
@@ -116,30 +139,42 @@ isoft_warehouse_location_management.App = class {
 	}
 
 	render_shell() {
+		// Icons carry Invenza's meaning colours: analysis teal, the locations themselves
+		// brand blue, stock movement amber, data in and out violet, settings muted.
 		const tabs = [
-			{ key: 'dashboard', label: 'Dashboard', icon: 'fa-tachometer' },
-			{ key: 'warehouse', label: 'Locations', icon: 'fa-th-large' },
-			{ key: 'ledger', label: 'Ledger', icon: 'fa-list' },
-			{ key: 'transfer', label: 'Import / Export', icon: 'fa-exchange' },
+			{ key: 'dashboard', label: 'Dashboard', icon: 'fa-tachometer', tone: 'ip-i-perf' },
+			{ key: 'warehouse', label: 'Locations', icon: 'fa-th-large', tone: 'ip-i-item' },
+			{ key: 'ledger', label: 'Ledger', icon: 'fa-list', tone: 'ip-i-stock' },
+			{ key: 'inventory', label: 'Location Inventory', icon: 'fa-check-square-o', tone: 'ip-i-stock' },
+			{ key: 'transfer', label: 'Import / Export', icon: 'fa-exchange', tone: 'ip-i-buy' },
 		];
-		if (this.ctx.is_admin) tabs.push({ key: 'settings', label: 'Settings', icon: 'fa-cog' });
+		if (this.ctx.is_admin) tabs.push({ key: 'settings', label: 'Settings', icon: 'fa-cog', tone: 'ip-i-muted' });
+		const esc = frappe.utils.escape_html;
 		const tabs_html = tabs
-			.map((t) => `<button class="ip-tab" data-view="${t.key}"><i class="fa ${t.icon}"></i> ${t.label}</button>`)
+			.map((t) => `<button class="ip-tab" data-view="${t.key}" title="${esc(__(t.label))}"><i class="fa ${t.icon} ${t.tone}"></i><span>${esc(__(t.label))}</span></button>`)
 			.join('');
 
+		// A left sidebar, as in Isoft Invenza. The tabs and the scope selector keep their
+		// classes, so show(), set_active() and the scope handler work exactly as before.
 		this.$body.html(`
-			<div class="ip-bar">
+			<aside class="ip-sidebar">
 				<div class="ip-brand">
 					<div class="ip-brand-logo">${this.logo_svg()}</div>
-					<div><div class="ip-brand-title">Isoft Location Manager</div>
+					<div class="ip-brand-text"><div class="ip-brand-title">Isoft Location Manager</div>
 					<div class="ip-brand-sub">Warehouse Preparation</div></div>
 				</div>
-				<div class="ip-scope">
-					<i class="fa fa-filter"></i>
-					<select class="ip-input ip-scope-select">${this.warehouse_options(this.scope)}</select>
+				<nav class="ip-nav">
+					${tabs_html}
+					<div class="ip-nav-sep"></div>
+					<button type="button" class="ip-sb-toggle" title="${esc(__('Collapse sidebar'))}"><i class="fa fa-angle-double-left"></i><span>${esc(__('Collapse'))}</span></button>
+				</nav>
+				<div class="ip-sb-foot">
+					<div class="ip-scope" title="${esc(__('Warehouse'))}">
+						<i class="fa fa-filter"></i>
+						<select class="ip-input ip-scope-select">${this.warehouse_options(this.scope)}</select>
+					</div>
 				</div>
-				<div class="ip-tabs">${tabs_html}</div>
-			</div>
+			</aside>
 			<div class="ip-content"></div>`);
 
 		this.$content = this.$body.find('.ip-content');
@@ -149,6 +184,30 @@ isoft_warehouse_location_management.App = class {
 			localStorage.setItem('ip_scope', this.scope);
 			this.show(this.current);
 		});
+		this.$body.find('.ip-sb-toggle').on('click', () => {
+			this.set_sidebar_collapsed(!$('body').hasClass('ip-sb-collapsed'));
+		});
+		// On the icon rail the scope is only an icon: clicking it opens the sidebar.
+		this.$body.find('.ip-scope').on('click', () => {
+			if ($('body').hasClass('ip-sb-collapsed')) this.set_sidebar_collapsed(false);
+		});
+		this.set_sidebar_collapsed(localStorage.getItem('ip_sidebar_collapsed') === '1', true);
+	}
+
+	// Collapse to an icon rail and remember it, as Invenza does. The unassigned dock
+	// aligns itself to the page on resize, so it is told once now and again after the
+	// width transition has settled.
+	set_sidebar_collapsed(collapsed, silent) {
+		$('body').toggleClass('ip-sb-collapsed', !!collapsed);
+		if (!silent) localStorage.setItem('ip_sidebar_collapsed', collapsed ? '1' : '0');
+		const $t = this.$body.find('.ip-sb-toggle');
+		$t.attr('title', collapsed ? __('Expand sidebar') : __('Collapse sidebar'));
+		$t.find('i').attr('class', 'fa ' + (collapsed ? 'fa-angle-double-right' : 'fa-angle-double-left'));
+		$t.find('span').text(collapsed ? __('Expand') : __('Collapse'));
+		if (!silent) {
+			$(window).trigger('resize');
+			setTimeout(() => $(window).trigger('resize'), 220);
+		}
 	}
 
 	logo_svg() {
@@ -170,10 +229,12 @@ isoft_warehouse_location_management.App = class {
 		// the dock is mounted on the body so it can pin to the viewport — that means it
 		// has to be taken down deliberately when the view changes
 		this.teardown_dock();
+		this.teardown_explorer_fit();
 		this.$content.html('<div class="ip-loading"><div class="ip-spin"></div></div>');
 		if (view === 'dashboard') this.dashMode === 'check' ? this.render_check_panel() : this.render_dashboard();
 		else if (view === 'warehouse') this.render_warehouse();
 		else if (view === 'ledger') this.render_ledger();
+		else if (view === 'inventory') this.render_inventory();
 		else if (view === 'transfer') this.render_transfer();
 		else if (view === 'settings') this.render_settings();
 	}
@@ -235,7 +296,7 @@ isoft_warehouse_location_management.App = class {
 								<td><span class="ip-led-loc-cell">${esc(b.label)}</span></td>
 								<td class="ip-muted">${esc(__('{0} item(s)', [b.items]))}</td>
 								<td class="ip-num"><b>${format_number(b.qty)}</b></td>
-								<td class="ip-num ip-muted">${b.fill === null ? '' : Math.round(b.fill) + '% ' + esc(__('full'))}</td>
+								<td class="ip-num ip-muted">${b.fill == null ? '' : Math.round(b.fill) + '% ' + esc(__('full'))}</td>
 							</tr>`).join('')}</tbody></table>`
 							: `<div class="ip-mini-empty">${esc(__('Nothing is on a location yet.'))}</div>`}
 					</div>
@@ -372,6 +433,37 @@ isoft_warehouse_location_management.App = class {
 		if (this.ctx.is_preparer || this.ctx.can_manage) this.render_unassigned_dock();
 
 		this.$content.find('.ip-new-location').on('click', () => this.create_locations_dialog());
+		// after the dock, whose handle takes room at the bottom
+		this.fit_explorer();
+	}
+
+	// The toolbar stays put and only the area below it scrolls (the Locations board, the
+	// Ledger table). The area is first made as tall as the window allows from where it
+	// starts, then gives back whatever that pushed below the fold — paddings, the edge of
+	// its card, the room kept for the dock's handle — so the page itself never scrolls.
+	// Re-measured when the window or the toolbar (which wraps when narrow) changes size.
+	fit_explorer(selector) {
+		const $wrap = this.$content.find(selector || '.ip-explorer');
+		if (!$wrap.length) return;
+		window.scrollTo(0, 0);
+		const fit = () => {
+			const el = $wrap[0];
+			if (!el.isConnected) return;
+			el.style.height = Math.max(220, Math.floor(window.innerHeight - el.getBoundingClientRect().top)) + 'px';
+			const over = document.documentElement.scrollHeight - window.innerHeight;
+			if (over > 0) el.style.height = Math.max(220, el.offsetHeight - over) + 'px';
+		};
+		fit();
+		$(window).off('resize.ipwh').on('resize.ipwh', frappe.utils.debounce(fit, 80));
+		if (this._wh_ro) this._wh_ro.disconnect();
+		this._wh_ro = window.ResizeObserver ? new ResizeObserver(() => fit()) : null;
+		const toolbar = this.$content.find('.ip-toolbar')[0];
+		if (this._wh_ro && toolbar) this._wh_ro.observe(toolbar);
+	}
+
+	teardown_explorer_fit() {
+		$(window).off('resize.ipwh');
+		if (this._wh_ro) { this._wh_ro.disconnect(); this._wh_ro = null; }
 	}
 
 	// ---- reconciliation, reached from the Dashboard ----
@@ -1296,6 +1388,11 @@ isoft_warehouse_location_management.App = class {
 		};
 		place();
 		$(window).off('resize.ipdock').on('resize.ipdock', frappe.utils.debounce(place, 120));
+		// The page also changes width without the window doing so: a scrollbar appearing
+		// once the board has loaded, or the sidebar collapsing. Follow the page itself.
+		if (this._dock_ro) this._dock_ro.disconnect();
+		this._dock_ro = window.ResizeObserver ? new ResizeObserver(() => place()) : null;
+		if (this._dock_ro && this.$body && this.$body[0]) this._dock_ro.observe(this.$body[0]);
 
 		// --- height is measured, so opening and closing follow the same curve ---
 		const measure = () => {
@@ -1409,6 +1506,14 @@ isoft_warehouse_location_management.App = class {
 		$(document).off('keydown.ipdock').on('keydown.ipdock', (e) => {
 			if (e.key === 'Escape' && $dock.hasClass('is-open')) set_open(false);
 		});
+		// A click anywhere else puts it away, as a menu would. Not a click inside it, in a
+		// dialog or dropdown opened from it, nor while one of its cards is being dragged.
+		$(document).off('mousedown.ipdock touchstart.ipdock').on('mousedown.ipdock touchstart.ipdock', (e) => {
+			if (!$dock.hasClass('is-open') || $dock.hasClass('is-tucked')) return;
+			if (!document.body.contains(e.target)) return;
+			if ($(e.target).closest('.ip-dock, .modal, .modal-backdrop, .awesomplete, .datepicker, .dropdown-menu, .ip-drawer-overlay').length) return;
+			set_open(false);
+		});
 
 		let t;
 		$dock.find('.ip-dock-search').on('input', (e) => {
@@ -1426,7 +1531,9 @@ isoft_warehouse_location_management.App = class {
 	teardown_dock() {
 		$('.ip-dock').remove();
 		$(window).off('resize.ipdock');
+		if (this._dock_ro) { this._dock_ro.disconnect(); this._dock_ro = null; }
 		$(document).off('keydown.ipdock');
+		$(document).off('mousedown.ipdock touchstart.ipdock');
 		$('body').removeClass('ip-has-dock');
 		this.$dock = null;
 	}
@@ -1756,113 +1863,642 @@ isoft_warehouse_location_management.App = class {
 	// out on the shelf it left and an in on the shelf it reached.
 	render_ledger() {
 		const esc = frappe.utils.escape_html;
-		this.ledger = this.ledger || { location: '', item: '', start: 0, rows: [] };
+		const PAGE = 50;
+		const today = frappe.datetime.get_today();
+		// Filters survive a visit to another screen. The dates open on today: the ledger
+		// only grows, so asking for all of it by default is the expensive choice.
+		this.ledger = this.ledger || { location: '', location_label: '', item: '', from_date: today, to_date: today };
+		const L = this.ledger;
 
 		this.$content.html(`
-			<div class="ip-toolbar">
-				<select class="ip-input ip-led-loc" style="min-width:220px">
-					<option value="">${esc(__('All locations'))}</option>
-				</select>
+			<div class="ip-toolbar ip-led-toolbar">
+				<label class="ip-led-date"><span>${esc(__('From'))}</span>
+					<input type="date" class="ip-input ip-led-from" value="${esc(L.from_date || '')}"></label>
+				<label class="ip-led-date"><span>${esc(__('To'))}</span>
+					<input type="date" class="ip-input ip-led-to" value="${esc(L.to_date || '')}"></label>
+				<div class="ip-search ip-led-locbox"><i class="fa fa-map-marker"></i>
+					<input class="ip-input ip-led-loc" placeholder="${esc(__('All locations'))}" value="${esc(L.location_label || '')}">
+					<button type="button" class="ip-led-clear" title="${esc(__('Show all locations'))}"${L.location ? '' : ' hidden'}>&times;</button></div>
 				<div class="ip-search"><i class="fa fa-search"></i>
 					<input class="ip-input ip-led-item" placeholder="${esc(__('Item code…'))}"
-						value="${esc(this.ledger.item || '')}"></div>
+						value="${esc(L.item || '')}"></div>
 				<div class="ip-led-note ip-muted"></div>
 			</div>
-			<div class="ip-card ip-fade" style="--i:0"><div class="ip-ledwrap">
-				<div class="ip-loading"><div class="ip-spin"></div></div></div></div>`);
+			<div class="ip-card ip-led-card"><div class="ip-ledwrap"></div></div>`);
 
 		const $wrap = this.$content.find('.ip-ledwrap');
-		const $sel = this.$content.find('.ip-led-loc');
+		const $note = this.$content.find('.ip-led-note');
 
-		this.api('get_ledger_locations', { warehouse: this.scope }).then((locs) => {
-			(locs || []).forEach((l) => {
-				const label = l.is_unassigned
-					? __('Unassigned Stock') + ' — ' + l.warehouse
-					: (l.location_code + (l.location_name && l.location_name !== l.location_code
-						? ' · ' + l.location_name : ''));
-				$sel.append(`<option value="${esc(l.name)}"${l.name === this.ledger.location ? ' selected' : ''}>${esc(label)}</option>`);
-			});
-		});
+		// One page at a time: the next is asked for only when the table is scrolled near
+		// its end, and only its rows are added. A reply to a filter that has since changed
+		// is dropped (token).
+		let token = 0, cursor = null, loading = false, done = false, count = 0;
 
-		const render = () => {
-			const focused = !!this.ledger.location;
-			if (!this.ledger.rows.length) {
-				$wrap.html(`<div class="ip-empty-lg"><i class="fa fa-list"></i>
-					<div>${esc(__('Nothing has moved here yet.'))}</div></div>`);
-				return;
-			}
-			$wrap.html(`
-				<table class="ip-table ip-ledger">
-					<thead><tr>
-						<th>${esc(__('When'))}</th>
-						<th>${esc(__('Item'))}</th>
-						${focused ? `<th class="ip-num">${esc(__('In'))}</th><th class="ip-num">${esc(__('Out'))}</th>`
-							: `<th class="ip-num">${esc(__('Qty'))}</th>`}
-						<th>${esc(__('From'))}</th><th>${esc(__('To'))}</th>
-						<th>${esc(__('Because of'))}</th>
-					</tr></thead>
-					<tbody>${this.ledger.rows.map((r) => {
-						const loc = (name, loose) => name
-							? `<span class="ip-led-loc-cell${loose ? ' is-loose' : ''}">${esc(loose ? __('Unassigned') : name)}</span>`
-							: '<span class="ip-muted">—</span>';
-						return `<tr>
-							<td class="ip-led-when">${esc(frappe.datetime.str_to_user(r.posting_date))}
-								<span>${esc(r.posting_time || '')}</span></td>
-							<td><div class="ip-ti-code">${esc(r.item_code)}</div>
-								<div class="ip-ti-name">${esc(r.item_name || '')}</div></td>
-							${focused
-								? `<td class="ip-num ip-led-in">${r.direction === 'in' ? format_number(r.qty) : ''}</td>
-								   <td class="ip-num ip-led-out">${r.direction === 'out' ? format_number(r.qty) : ''}</td>`
-								: `<td class="ip-num">${format_number(r.qty)}</td>`}
-							<td>${loc(r.source, r.source_loose)}</td>
-							<td>${loc(r.target, r.target_loose)}</td>
-							<td>${r.reference
-								? `<span class="ip-led-ref" data-dt="${esc(r.reference.doctype)}" data-dn="${esc(r.reference.name)}">${esc(r.reference.name)}</span>
-								   <div class="ip-muted" style="font-size:10.5px">${esc(r.reference.doctype)}</div>`
-								: `<span class="ip-muted">${esc(r.entry_type)}</span>`}</td>
-						</tr>`; }).join('')}</tbody>
-				</table>
-				${this.ledger.has_more ? `<button class="ip-btn ip-btn-light ip-led-more" style="margin:14px auto 0;display:block">${esc(__('Load more'))}</button>` : ''}`);
+		const head = (focused) => `
+			<table class="ip-table ip-ledger">
+				<thead><tr>
+					<th>${esc(__('When'))}</th>
+					<th>${esc(__('Item'))}</th>
+					${focused ? `<th class="ip-num">${esc(__('In'))}</th><th class="ip-num">${esc(__('Out'))}</th>`
+						: `<th class="ip-num">${esc(__('Qty'))}</th>`}
+					<th>${esc(__('From'))}</th><th>${esc(__('To'))}</th>
+					<th>${esc(__('Because of'))}</th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+			<div class="ip-led-foot"></div>`;
 
-			$wrap.find('.ip-led-ref').on('click', (e) => {
-				const $t = $(e.currentTarget);
-				frappe.set_route('Form', $t.data('dt'), $t.data('dn'));
-			});
-			$wrap.find('.ip-led-more').on('click', () => load(true));
+		const row = (r, focused) => {
+			const loc = (name, loose) => name
+				? `<span class="ip-led-loc-cell${loose ? ' is-loose' : ''}">${esc(loose ? __('Unassigned') : name)}</span>`
+				: '<span class="ip-muted">—</span>';
+			return `<tr>
+				<td class="ip-led-when">${esc(frappe.datetime.str_to_user(r.posting_date))}
+					<span>${esc(r.posting_time || '')}</span></td>
+				<td><div class="ip-ti-code">${esc(r.item_code)}</div>
+					<div class="ip-ti-name">${esc(r.item_name || '')}</div></td>
+				${focused
+					? `<td class="ip-num ip-led-in">${r.direction === 'in' ? format_number(r.qty) : ''}</td>
+					   <td class="ip-num ip-led-out">${r.direction === 'out' ? format_number(r.qty) : ''}</td>`
+					: `<td class="ip-num">${format_number(r.qty)}</td>`}
+				<td>${loc(r.source, r.source_loose)}</td>
+				<td>${loc(r.target, r.target_loose)}</td>
+				<td>${r.reference
+					? `<span class="ip-led-ref" data-dt="${esc(r.reference.doctype)}" data-dn="${esc(r.reference.name)}">${esc(r.reference.name)}</span>
+					   <div class="ip-muted" style="font-size:10.5px">${esc(r.reference.doctype)}</div>`
+					: `<span class="ip-muted">${esc(r.entry_type)}</span>`}</td>
+			</tr>`;
 		};
 
-		const load = (append) => {
-			if (!append) { this.ledger.start = 0; this.ledger.rows = []; }
+		const foot = (state) => {
+			const $f = $wrap.find('.ip-led-foot');
+			if (state === 'loading') {
+				$f.html(`<span class="ip-led-state"><span class="ip-spin ip-spin-sm"></span> ${esc(__('Loading…'))}</span>`);
+			} else if (state === 'error') {
+				$f.html(`<button class="ip-btn ip-btn-light ip-led-retry">${esc(__('Try again'))}</button>`);
+			} else if (state === 'end' && count > PAGE) {
+				$f.html(`<span class="ip-led-end">${esc(__('All {0} movement lines are shown', [count]))}</span>`);
+			} else {
+				$f.empty();
+			}
+		};
+
+		const note = () => {
+			$note.text(L.location
+				? __('In and Out are relative to {0}.', [L.location_label || L.location])
+				: __('{0} movement line(s)', [count + (done ? '' : '+')]));
+		};
+
+		const more = () => {
+			const el = $wrap[0];
+			if (!done && !loading && el.scrollHeight - el.scrollTop - el.clientHeight < 400) fetch();
+		};
+
+		const fetch = () => {
+			if (loading || done) return;
+			loading = true;
+			const mine = token;
+			foot('loading');
 			this.api('get_ledger', {
 				warehouse: this.scope,
-				location: this.ledger.location || '',
-				item_code: this.ledger.item || '',
-				start: this.ledger.start,
-				limit: 60,
+				location: L.location || '',
+				item_code: L.item || '',
+				from_date: L.from_date || '',
+				to_date: L.to_date || '',
+				limit: PAGE,
+				after: cursor ? JSON.stringify(cursor) : '',
 			}).then((r) => {
-				if (!r) return;
-				this.ledger.rows = append ? this.ledger.rows.concat(r.rows || []) : (r.rows || []);
-				this.ledger.start = this.ledger.rows.length;
-				this.ledger.has_more = r.has_more;
-				this.$content.find('.ip-led-note').text(
-					this.ledger.location
-						? __('In and Out are relative to {0}.', [this.ledger.location])
-						: __('{0} movement line(s)', [this.ledger.rows.length + (r.has_more ? '+' : '')])
-				);
-				render();
+				if (mine !== token) return;
+				loading = false;
+				r = r || {};
+				const rows = r.rows || [];
+				const focused = !!L.location;
+				$wrap.find('tbody').append(rows.map((x) => row(x, focused)).join(''));
+				count += rows.length;
+				cursor = r.next || null;
+				done = !r.has_more || !cursor;
+				if (!count) {
+					$wrap.html(`<div class="ip-empty-lg"><i class="fa fa-list"></i>
+						<div>${esc(L.from_date || L.to_date ? __('Nothing moved in this period.') : __('Nothing has moved here yet.'))}</div></div>`);
+					$note.text('');
+					return;
+				}
+				foot(done ? 'end' : '');
+				note();
+				more();   // a tall window may hold more than one page
+			}, () => {
+				if (mine !== token) return;
+				loading = false;
+				foot('error');
 			});
 		};
 
-		$sel.on('change', (e) => { this.ledger.location = e.target.value; load(); });
+		const reset = () => {
+			token++;
+			cursor = null; loading = false; done = false; count = 0;
+			$wrap.scrollTop(0).html(head(!!L.location));
+			$note.text('');
+			fetch();
+		};
+
+		let raf = 0;
+		$wrap.on('scroll', () => {
+			if (!raf) raf = requestAnimationFrame(() => { raf = 0; more(); });
+		});
+		$wrap.on('click', '.ip-led-ref', (e) => {
+			const $t = $(e.currentTarget);
+			frappe.set_route('Form', $t.data('dt'), $t.data('dn'));
+		});
+		$wrap.on('click', '.ip-led-retry', () => fetch());
+
+		// dates: an empty date means no bound on that side; a reversed range is put right
+		const $from = this.$content.find('.ip-led-from');
+		const $to = this.$content.find('.ip-led-to');
+		$from.on('change', () => {
+			L.from_date = $from.val();
+			if (L.from_date && L.to_date && L.from_date > L.to_date) { L.to_date = L.from_date; $to.val(L.to_date); }
+			reset();
+		});
+		$to.on('change', () => {
+			L.to_date = $to.val();
+			if (L.from_date && L.to_date && L.from_date > L.to_date) { L.from_date = L.to_date; $from.val(L.from_date); }
+			reset();
+		});
+
+		// location: searched as it is typed, twenty matches at a time
+		const $loc = this.$content.find('.ip-led-loc');
+		const $clear = this.$content.find('.ip-led-clear');
+		const aw = new Awesomplete($loc[0], {
+			minChars: 0,
+			maxItems: 20,
+			autoFirst: true,
+			list: [],
+			sort: false,
+			filter: () => true,
+			replace: function (item) { this.input.value = item.label; },
+		});
+		let lt, ask = 0;
+		const search = () => {
+			const txt = $loc.val() === L.location_label ? '' : $loc.val();
+			const mine = ++ask;
+			this.api('search_ledger_locations', { txt, warehouse: this.scope }).then((list) => {
+				if (mine !== ask) return;
+				aw.list = (list || []).map((l) => ({ label: l.label, value: l.name }));
+				aw.evaluate();
+			});
+		};
+		const set_location = (value, label) => {
+			L.location = value || '';
+			L.location_label = value ? (label || value) : '';
+			$clear.prop('hidden', !L.location);
+			reset();
+		};
+		$loc.on('focus', () => search());
+		$loc.on('input', () => {
+			clearTimeout(lt);
+			lt = setTimeout(search, 250);
+			if (!$loc.val() && L.location) set_location('');
+		});
+		$loc.on('awesomplete-selectcomplete', (e) => {
+			const o = e.originalEvent && e.originalEvent.text;
+			if (o) set_location(o.value, o.label);
+		});
+		$loc.on('blur', () => setTimeout(() => {
+			if ($loc.val() !== L.location_label) $loc.val(L.location_label);
+		}, 200));
+		$clear.on('click', () => { $loc.val(''); set_location(''); });
+
 		let t;
 		this.$content.find('.ip-led-item').on('input', (e) => {
-			this.ledger.item = e.target.value.trim();
-			clearTimeout(t); t = setTimeout(() => load(), 300);
+			L.item = e.target.value.trim();
+			clearTimeout(t); t = setTimeout(() => reset(), 300);
 		});
-		load();
+
+		this.fit_explorer('.ip-ledwrap');
+		reset();
 	}
 
 	// ------------------------------------------------------------------ SETTINGS
+	// ------------------------------------------------------------------ LOCATION INVENTORY
+	// Counting a location, modelled on Odoo's Physical Inventory: the system quantity
+	// beside a counted quantity that starts blank, the difference worked out as it is
+	// typed, and only the lines actually counted posted. Blank means not counted yet,
+	// which is not zero — a sheet that treated them alike would write off every item the
+	// counter had simply not reached.
+	render_inventory() {
+		const inv = this.inv;
+		if (inv && inv.open) {
+			// coming back to the tab with unsaved counts: repaint them rather than refetch
+			return inv.rows && inv.dirty ? this.paint_inventory_sheet() : this.render_inventory_sheet();
+		}
+		const esc = frappe.utils.escape_html;
+		this.$content.html(`
+			<div class="ip-toolbar">
+				<div class="ip-inv-intro ip-muted">${esc(__('Count what is physically on a location. The difference is posted as a Stock Reconciliation, valued at the rate the stock already carries.'))}</div>
+				<button class="ip-btn ip-btn-primary ip-inv-new"><i class="fa fa-plus"></i>${esc(__('New count'))}</button>
+			</div>
+			<div class="ip-card"><div class="ip-inv-list"><div class="ip-loading"><div class="ip-spin"></div></div></div></div>`);
+		this.$content.find('.ip-inv-new').on('click', () => this.inventory_pick_location());
+
+		this.api('inventory_list', { warehouse: this.scope }).then((rows) => {
+			const $list = this.$content.find('.ip-inv-list');
+			if (!rows || !rows.length) {
+				$list.html(`<div class="ip-empty-lg"><i class="fa fa-check-square-o"></i>${esc(__('No counts yet. Start one with New count.'))}</div>`);
+				return;
+			}
+			const status = (r) => r.docstatus === 1 ? ['posted', __('Posted')]
+				: r.docstatus === 2 ? ['cancelled', __('Cancelled')] : ['draft', __('Draft')];
+			$list.html(`<div class="ip-inv-tablewrap"><table class="ip-table"><thead><tr>
+					<th>${esc(__('Count'))}</th><th>${esc(__('Location'))}</th><th>${esc(__('Warehouse'))}</th>
+					<th>${esc(__('Date'))}</th><th class="ip-inv-num">${esc(__('Counted'))}</th>
+					<th class="ip-inv-num">${esc(__('Differences'))}</th><th class="ip-inv-num">${esc(__('Net units'))}</th>
+					<th>${esc(__('Status'))}</th></tr></thead><tbody>${rows.map((r) => {
+						const st = status(r);
+						return `<tr class="ip-inv-open" data-name="${esc(r.name)}">
+							<td><b>${esc(r.name)}</b></td>
+							<td>${esc(r.location_code || '')}</td>
+							<td class="ip-muted">${esc(r.warehouse || '')}</td>
+							<td>${esc(frappe.datetime.str_to_user(r.posting_date) || '')}</td>
+							<td class="ip-inv-num">${cint(r.counted_lines)}</td>
+							<td class="ip-inv-num">${cint(r.difference_lines)}</td>
+							<td class="ip-inv-num">${this.inventory_signed(r.net_difference)}</td>
+							<td><span class="ip-inv-status is-${st[0]}">${esc(st[1])}</span></td></tr>`;
+					}).join('')}</tbody></table></div>`);
+			$list.find('.ip-inv-open').on('click', (e) => {
+				this.inv = { open: true, name: $(e.currentTarget).data('name') };
+				this.render_inventory_sheet();
+			});
+		});
+	}
+
+	inventory_signed(v) {
+		v = flt(v);
+		if (Math.abs(v) < 1e-9) return '<span class="ip-inv-zero">0</span>';
+		return `<span class="${v > 0 ? 'ip-inv-plus' : 'ip-inv-minus'}">${v > 0 ? '+' : '−'}${format_number(Math.abs(v))}</span>`;
+	}
+
+	inventory_pick_location() {
+		const esc = frappe.utils.escape_html;
+		this.api('inventory_locations', { warehouse: this.scope }).then((locs) => {
+			if (!locs || !locs.length) {
+				frappe.msgprint(__('There is no location to count here. Only active locations in enabled warehouses can be counted.'));
+				return;
+			}
+			const d = new frappe.ui.Dialog({
+				title: __('Which location are you counting?'),
+				fields: [
+					{ fieldtype: 'Data', fieldname: 'q', label: __('Find a location'), placeholder: __('Code, name or warehouse') },
+					{ fieldtype: 'HTML', fieldname: 'list' },
+				],
+			});
+			const $list = d.fields_dict.list.$wrapper;
+			const paint = (q) => {
+				q = (q || '').trim().toLowerCase();
+				const hits = locs.filter((l) => !q || [l.location_code, l.location_name, l.warehouse]
+					.some((v) => String(v || '').toLowerCase().indexOf(q) !== -1)).slice(0, 200);
+				$list.html(hits.length ? `<div class="ip-inv-pick">${hits.map((l) => `
+					<button type="button" class="ip-inv-pickrow" data-name="${esc(l.name)}">
+						<b>${esc(l.location_code)}</b>
+						<span class="ip-muted">${esc(l.warehouse)}</span>
+						<span class="ip-inv-pickmeta">${esc(__('{0} item(s)', [cint(l.items)]))}<br>${esc(l.last_counted
+							? __('last counted {0}', [frappe.datetime.str_to_user(l.last_counted)]) : __('never counted'))}</span>
+					</button>`).join('')}</div>`
+					: `<div class="ip-muted" style="padding:12px 2px">${esc(__('No location matches.'))}</div>`);
+			};
+			d.fields_dict.q.$input.on('input', (e) => paint(e.target.value));
+			$list.on('click', '.ip-inv-pickrow', (e) => {
+				d.hide();
+				this.inv = { open: true, location: $(e.currentTarget).data('name') };
+				this.render_inventory_sheet();
+			});
+			d.show();
+			paint('');
+		});
+	}
+
+	render_inventory_sheet() {
+		const inv = this.inv;
+		this.$content.html('<div class="ip-loading"><div class="ip-spin"></div></div>');
+		this.api('inventory_sheet', inv.name ? { name: inv.name } : { location: inv.location })
+			.then((s) => {
+				inv.head = s.head;
+				inv.rows = s.rows || [];
+				inv.name = s.head.name;
+				inv.dirty = false;
+				this.paint_inventory_sheet();
+			})
+			.fail(() => {
+				this.inv = null;
+				this.render_inventory();
+			});
+	}
+
+	paint_inventory_sheet() {
+		const esc = frappe.utils.escape_html;
+		const inv = this.inv;
+		const h = inv.head;
+		const editable = h.docstatus === 0;
+		const st = h.docstatus === 1 ? ['posted', __('Posted')]
+			: h.docstatus === 2 ? ['cancelled', __('Cancelled')] : ['draft', h.name ? __('Draft') : __('New')];
+		const link = (dt, dn) => frappe.utils.get_form_link(dt, dn, true);
+
+		this.$content.html(`
+			<div class="ip-inv-head">
+				<button class="ip-btn ip-btn-light ip-inv-back"><i class="fa fa-arrow-left"></i>${esc(__('Counts'))}</button>
+				<div class="ip-inv-title">
+					<div class="ip-inv-loc">${esc(h.location_code)} <span class="ip-inv-status is-${st[0]}">${esc(st[1])}</span></div>
+					<div class="ip-muted ip-inv-sub">${esc(h.warehouse)}${h.name ? ' · ' + esc(h.name) : ''}</div>
+				</div>
+				<div class="ip-inv-actions">
+					${editable ? `
+						<button class="ip-btn ip-btn-light ip-inv-fill" title="${esc(__('Mark every uncounted line as matching the system'))}"><i class="fa fa-check-circle-o"></i>${esc(__('Uncounted match'))}</button>
+						<button class="ip-btn ip-btn-light ip-inv-save"><i class="fa fa-save"></i>${esc(__('Save draft'))}</button>
+						<button class="ip-btn ip-btn-primary ip-inv-post"><i class="fa fa-check"></i>${esc(__('Post count'))}</button>` : ''}
+					${editable && h.name ? `<button class="ip-btn ip-btn-ghost ip-inv-discard"><i class="fa fa-trash"></i>${esc(__('Discard'))}</button>` : ''}
+					${h.docstatus === 1 ? `<button class="ip-btn ip-btn-ghost ip-inv-cancel"><i class="fa fa-undo"></i>${esc(__('Cancel count'))}</button>` : ''}
+				</div>
+			</div>
+			${editable && (h.other_drafts || []).length ? `<div class="ip-inv-note is-warn">${esc(__(
+				'This location is also being counted on {0}. Whichever is posted second is taken against the stock the first one left.',
+				[h.other_drafts.join(', ')]))}</div>` : ''}
+			${h.docstatus === 1 ? `<div class="ip-inv-note is-done">${h.stock_reconciliation
+				? __('Posted as {0}, with the location moved by {1}.', [link('Stock Reconciliation', h.stock_reconciliation), link('Location Stock Movement', h.location_movement)])
+				: esc(__('Posted. Everything counted matched the system, so nothing was adjusted.'))}</div>` : ''}
+			${h.docstatus === 2 ? `<div class="ip-inv-note">${esc(__('Cancelled. Its reconciliation and movement were cancelled with it.'))}</div>` : ''}
+			<div class="ip-inv-summary"></div>
+			${editable ? `<div class="ip-search ip-inv-scan"><i class="fa fa-barcode"></i>
+				<input class="ip-input ip-inv-scan-in" autocomplete="off"
+					placeholder="${esc(__('Scan a barcode or type an item code, then Enter'))}"></div>` : ''}
+			<div class="ip-card ip-inv-card"><div class="ip-inv-tablewrap">
+				<table class="ip-table ip-inv-table"><thead><tr>
+					<th>${esc(__('Item'))}</th>
+					<th class="ip-inv-num">${esc(__('System'))}</th>
+					<th class="ip-inv-num">${esc(__('Counted'))}</th>
+					<th class="ip-inv-num">${esc(__('Difference'))}</th>
+					<th></th>
+				</tr></thead><tbody></tbody></table>
+			</div></div>`);
+
+		const $c = this.$content;
+		const $tbody = $c.find('.ip-inv-table tbody');
+		const $summary = $c.find('.ip-inv-summary');
+		const $scan = $c.find('.ip-inv-scan-in');
+		const diff_of = (r) => flt(r.counted_qty) - flt(r.system_qty);
+		const moved_of = (r) => !!r.is_counted && Math.abs(flt(r.current_qty) - flt(r.system_qty)) > 1e-6;
+		const sys_html = (r) => `${format_number(r.system_qty)} <span class="ip-muted ip-inv-uom">${esc(r.stock_uom || '')}</span>`;
+		// Typing a count means counting now, so the line is taken against today's quantity.
+		const rebase = ($tr, r) => {
+			if (Math.abs(flt(r.current_qty) - flt(r.system_qty)) <= 1e-6) return;
+			r.system_qty = flt(r.current_qty);
+			$tr.removeClass('is-moved').find('.ip-inv-moved').remove();
+			$tr.find('.ip-inv-sys').html(sys_html(r));
+		};
+		const why = {
+			serial: __('tracked by serial number — count it with a Stock Reconciliation'),
+			batch: __('tracked by batch — count it with a Stock Reconciliation'),
+			not_stock: __('not a stock item'),
+		};
+
+		const diff_html = (r) => {
+			if (!r.is_counted) return `<span class="ip-muted">${esc(__('not counted'))}</span>`;
+			const d = diff_of(r);
+			if (Math.abs(d) < 1e-9) return `<span class="ip-inv-zero">${esc(__('matches'))}</span>`;
+			return this.inventory_signed(d);
+		};
+
+		const row_html = (r, i) => {
+			const locked = !editable || !!r.unsupported;
+			const moved = moved_of(r);
+			return `<tr data-i="${i}" class="${r.is_counted ? 'is-counted' : ''}${r.unsupported ? ' is-locked' : ''}${moved ? ' is-moved' : ''}">
+				<td><div class="ip-inv-code">${esc(r.item_code)}</div>
+					<div class="ip-muted ip-inv-name">${esc(r.item_name || '')}${r.unsupported ? ' · ' + esc(why[r.unsupported]) : ''}</div>
+					${moved ? `<div class="ip-inv-moved">${esc(__('Stock moved since this was counted: now {0}. Count it again.', [format_number(r.current_qty)]))}</div>` : ''}</td>
+				<td class="ip-inv-num ip-inv-sys">${sys_html(r)}</td>
+				<td class="ip-inv-num"><input type="number" inputmode="decimal" min="0" step="any"
+					class="ip-input ip-inv-in" placeholder="—" value="${r.is_counted ? flt(r.counted_qty) : ''}"${locked ? ' disabled' : ''}></td>
+				<td class="ip-inv-num ip-inv-diff">${diff_html(r)}</td>
+				<td class="ip-inv-rowact">${locked ? '' : `
+					<button type="button" class="ip-inv-eq" title="${esc(__('Counted matches the system'))}">=</button>
+					<button type="button" class="ip-inv-clr" title="${esc(__('Not counted'))}">&times;</button>`}</td>
+			</tr>`;
+		};
+
+		const summarise = () => {
+			const usable = inv.rows.filter((r) => !r.unsupported);
+			const counted = usable.filter((r) => r.is_counted);
+			const differ = counted.filter((r) => Math.abs(diff_of(r)) > 1e-9);
+			const found = differ.filter((r) => diff_of(r) > 0).length;
+			const net = counted.reduce((a, r) => a + diff_of(r), 0);
+			$summary.html(`
+				<div class="ip-inv-stat"><span>${esc(__('Counted'))}</span><b>${counted.length} / ${usable.length}</b></div>
+				<div class="ip-inv-stat"><span>${esc(__('Differences'))}</span><b>${differ.length}</b></div>
+				<div class="ip-inv-stat"><span>${esc(__('More than expected'))}</span><b class="${found ? 'ip-inv-plus' : ''}">${found}</b></div>
+				<div class="ip-inv-stat"><span>${esc(__('Less than expected'))}</span><b class="${differ.length - found ? 'ip-inv-minus' : ''}">${differ.length - found}</b></div>
+				<div class="ip-inv-stat"><span>${esc(__('Net units'))}</span><b>${this.inventory_signed(net)}</b></div>`);
+		};
+
+		const paint_rows = () => {
+			if (!inv.rows.length) {
+				$tbody.html(`<tr><td colspan="5" class="ip-muted ip-inv-empty">${esc(editable
+					? __('Nothing is recorded on this location. Scan or type what you find to add it.')
+					: __('No lines.'))}</td></tr>`);
+				return;
+			}
+			$tbody.html(inv.rows.map(row_html).join(''));
+		};
+
+		const refresh_row = ($tr, r) => {
+			$tr.toggleClass('is-counted', !!r.is_counted);
+			$tr.find('.ip-inv-diff').html(diff_html(r));
+			summarise();
+		};
+
+		const focus_row = (k) => {
+			const $tr = $tbody.find(`tr[data-i="${k}"]`);
+			$tbody.find('tr.is-hit').removeClass('is-hit');
+			$tr.addClass('is-hit');
+			if ($tr[0] && $tr[0].scrollIntoView) $tr[0].scrollIntoView({ block: 'center' });
+			$tr.find('.ip-inv-in').focus().select();
+		};
+
+		paint_rows();
+		summarise();
+		if (!editable) return;
+
+		$tbody.on('input', '.ip-inv-in', (e) => {
+			const $tr = $(e.currentTarget).closest('tr');
+			const r = inv.rows[cint($tr.data('i'))];
+			const raw = e.currentTarget.value;
+			rebase($tr, r);
+			if (raw === '' || flt(raw) < 0) {
+				r.is_counted = 0;
+				r.counted_qty = 0;
+			} else {
+				r.is_counted = 1;
+				r.counted_qty = flt(raw);
+			}
+			inv.dirty = true;
+			refresh_row($tr, r);
+		});
+
+		// Enter walks down the sheet, so a count can be typed without touching the mouse
+		$tbody.on('keydown', '.ip-inv-in', (e) => {
+			if (e.key !== 'Enter') return;
+			e.preventDefault();
+			const $all = $tbody.find('.ip-inv-in:not(:disabled)');
+			const $next = $all.eq($all.index(e.currentTarget) + 1);
+			if ($next.length) $next.focus().select();
+			else $scan.focus();
+		});
+
+		$tbody.on('click', '.ip-inv-eq', (e) => {
+			const $tr = $(e.currentTarget).closest('tr');
+			const r = inv.rows[cint($tr.data('i'))];
+			rebase($tr, r);
+			r.is_counted = 1;
+			r.counted_qty = flt(r.system_qty);
+			$tr.find('.ip-inv-in').val(flt(r.system_qty));
+			inv.dirty = true;
+			refresh_row($tr, r);
+		});
+
+		$tbody.on('click', '.ip-inv-clr', (e) => {
+			const $tr = $(e.currentTarget).closest('tr');
+			const r = inv.rows[cint($tr.data('i'))];
+			rebase($tr, r);
+			r.is_counted = 0;
+			r.counted_qty = 0;
+			$tr.find('.ip-inv-in').val('');
+			inv.dirty = true;
+			refresh_row($tr, r);
+		});
+
+		$scan.on('keydown', (e) => {
+			if (e.key !== 'Enter') return;
+			e.preventDefault();
+			const value = $scan.val().trim();
+			if (!value) return;
+			const k = inv.rows.findIndex((r) => String(r.item_code).toLowerCase() === value.toLowerCase());
+			if (k !== -1) {
+				$scan.val('');
+				focus_row(k);
+				return;
+			}
+			this.api('inventory_find_item', { location: h.location, value: value }).then((row) => {
+				if (!row) {
+					frappe.show_alert({ message: __('No item matches {0}.', [value]), indicator: 'red' });
+					return;
+				}
+				$scan.val('');
+				const j = inv.rows.findIndex((r) => r.item_code === row.item_code);
+				if (j !== -1) {
+					focus_row(j);
+					return;
+				}
+				if (row.unsupported) {
+					frappe.msgprint(__('{0} is {1}.', [row.item_code, why[row.unsupported]]));
+					return;
+				}
+				inv.rows.push(row);
+				inv.dirty = true;
+				paint_rows();
+				summarise();
+				focus_row(inv.rows.length - 1);
+				frappe.show_alert({ message: __('{0} was not expected on this location — added to the count.', [row.item_code]), indicator: 'orange' });
+			});
+		});
+
+		const payload = () => ({
+			data: JSON.stringify({
+				name: inv.name,
+				location: h.location,
+				rows: inv.rows.filter((r) => !r.unsupported).map((r) => ({
+					item_code: r.item_code,
+					is_counted: r.is_counted ? 1 : 0,
+					counted_qty: r.is_counted ? flt(r.counted_qty) : 0,
+					// what this sheet showed when the line was counted; checked again at posting
+					system_qty: r.is_counted ? flt(r.system_qty) : 0,
+				})),
+			}),
+		});
+		const busy = (on) => $c.find('.ip-inv-actions .ip-btn').prop('disabled', on);
+
+		$c.find('.ip-inv-fill').on('click', () => {
+			const open = inv.rows.filter((r) => !r.unsupported && !r.is_counted);
+			if (!open.length) {
+				frappe.show_alert({ message: __('Every line is already counted.'), indicator: 'blue' });
+				return;
+			}
+			frappe.confirm(__('Mark the {0} uncounted line(s) as matching the system? Only do this for items you have actually checked.', [open.length]), () => {
+				open.forEach((r) => { r.is_counted = 1; r.counted_qty = flt(r.system_qty); });
+				inv.dirty = true;
+				paint_rows();
+				summarise();
+			});
+		});
+
+		$c.find('.ip-inv-save').on('click', () => {
+			busy(true);
+			this.api('inventory_save', payload())
+				.then((s) => {
+					inv.head = s.head;
+					inv.rows = s.rows || [];
+					inv.name = s.head.name;
+					inv.dirty = false;
+					frappe.show_alert({ message: __('Draft saved'), indicator: 'green' });
+					this.paint_inventory_sheet();
+				})
+				.always(() => busy(false));
+		});
+
+		$c.find('.ip-inv-post').on('click', () => {
+			const usable = inv.rows.filter((r) => !r.unsupported);
+			const counted = usable.filter((r) => r.is_counted);
+			if (!counted.length) {
+				frappe.msgprint(__('Nothing has been counted yet. Enter a quantity on at least one line.'));
+				return;
+			}
+			const stale = counted.filter(moved_of);
+			if (stale.length) {
+				frappe.msgprint(__('Stock moved on {0} line(s) after they were counted. They are marked on the sheet — count them again before posting.', [stale.length]));
+				return;
+			}
+			const differ = counted.filter((r) => Math.abs(diff_of(r)) > 1e-9).length;
+			const left = usable.length - counted.length;
+			const message = [
+				__('{0} line(s) counted, {1} with a difference.', [counted.length, differ]),
+				differ
+					? __('A Stock Reconciliation will be created and submitted for the difference, valued at the rate the stock already carries.')
+					: __('Everything counted matches the system, so nothing will be adjusted.'),
+				left ? __('{0} line(s) not counted are left exactly as they are.', [left]) : '',
+			].filter(Boolean).map((t) => `<p>${esc(t)}</p>`).join('');
+			frappe.confirm(message, () => {
+				busy(true);
+				this.api('inventory_submit', payload())
+					.then((res) => {
+						frappe.show_alert({
+							message: res.stock_reconciliation
+								? __('Count posted as {0}', [res.stock_reconciliation])
+								: __('Count posted — nothing to adjust'),
+							indicator: 'green',
+						});
+						this.inv = { open: true, name: res.name };
+						this.render_inventory_sheet();
+					})
+					.always(() => busy(false));
+			});
+		});
+
+		$c.find('.ip-inv-discard').on('click', () => {
+			frappe.confirm(__('Discard this draft count?'), () => {
+				this.api('inventory_discard', { name: h.name }).then(() => {
+					this.inv = null;
+					this.render_inventory();
+				});
+			});
+		});
+	}
+
 	render_settings() {
 		this.api('get_settings').then((s) => {
 			const val_opts = ['Block', 'Warn', 'Off'].map((v) =>

@@ -4,7 +4,7 @@
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt
+from frappe.utils import cint, flt, getdate
 
 from isoft_warehouse_location_management.isoft_location_manager.api import sort_locations, sort_zones
 from isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_location.warehouse_location import UNASSIGNED_CODE
@@ -497,19 +497,33 @@ def set_location_qty(warehouse, item_code, location, qty):
 # location ledger
 # ======================================================================
 @frappe.whitelist()
-def get_ledger(warehouse=None, location=None, item_code=None, start=0, limit=100):
-	"""Every movement that touched a location, newest first.
+def get_ledger(warehouse=None, location=None, item_code=None, start=0, limit=50,
+		from_date=None, to_date=None, after=None):
+	"""Every movement that touched a location, newest first, one page at a time.
 
 	One document line becomes one ledger line per end it names, so a transfer reads as
 	an out on the shelf it left and an in on the shelf it reached. That is what makes
 	the ledger readable per location rather than per document.
+
+	Pages continue from `after` — the position of the last line already shown — rather
+	than from an offset, so the hundredth page costs what the first does. `start` is
+	still honoured when no position is given.
 	"""
 	_require_access()
 	scope = _scope(warehouse)
 	cond, params = _wh_cond(scope, "m.warehouse")
-	start, limit = cint(start), cint(limit) or 100
+	start = cint(start)
+	limit = min(max(cint(limit) or 50, 1), 200)
 
 	extra, extra_params = "", []
+	if from_date and to_date and getdate(from_date) > getdate(to_date):
+		from_date, to_date = to_date, from_date
+	if from_date:
+		extra += " and m.posting_date >= %s"
+		extra_params.append(getdate(from_date))
+	if to_date:
+		extra += " and m.posting_date <= %s"
+		extra_params.append(getdate(to_date))
 	if location:
 		extra += " and (i.source_location = %s or i.target_location = %s)"
 		extra_params += [location, location]
@@ -517,16 +531,27 @@ def get_ledger(warehouse=None, location=None, item_code=None, start=0, limit=100
 		extra += " and i.item_code = %s"
 		extra_params.append(item_code)
 
+	cursor = frappe.parse_json(after) if after else None
+	if cursor:
+		# strictly after the last line shown, in the same order the query sorts by
+		extra += (
+			" and (m.posting_date < %s or (m.posting_date = %s and (m.creation < %s"
+			" or (m.creation = %s and (m.name < %s or (m.name = %s and i.idx > %s))))))"
+		)
+		extra_params += [cursor.get("d"), cursor.get("d"), cursor.get("c"), cursor.get("c"),
+			cursor.get("n"), cursor.get("n"), cint(cursor.get("x"))]
+		start = 0
+
 	rows = frappe.db.sql(
 		"""
 		select m.name, m.entry_type, m.warehouse, m.posting_date, m.posting_time,
 			m.remarks, m.reference_stock_entry, m.reference_sales_document,
 			m.reference_doctype, m.owner, m.creation,
-			i.item_code, i.item_name, i.qty, i.source_location, i.target_location
+			i.idx, i.item_code, i.item_name, i.qty, i.source_location, i.target_location
 		from `tabLocation Stock Movement Item` i
 		inner join `tabLocation Stock Movement` m on m.name = i.parent
 		where m.docstatus = 1 {cond} {extra}
-		order by m.posting_date desc, m.creation desc, i.idx asc
+		order by m.posting_date desc, m.creation desc, m.name desc, i.idx asc
 		limit {limit} offset {start}
 		""".format(cond=cond, extra=extra, limit=limit + 1, start=start),
 		params + extra_params,
@@ -544,7 +569,8 @@ def get_ledger(warehouse=None, location=None, item_code=None, start=0, limit=100
 				"entry_type": r.entry_type,
 				"warehouse": r.warehouse,
 				"posting_date": str(r.posting_date or ""),
-				"posting_time": str(r.posting_time or "")[:5],
+				# hours and minutes; a time before 10:00 has no leading zero, so it is not cut by length
+				"posting_time": ":".join(str(r.posting_time or "").split(":")[:2]),
 				"item_code": r.item_code,
 				"item_name": r.item_name,
 				"qty": flt(r.qty),
@@ -562,7 +588,52 @@ def get_ledger(warehouse=None, location=None, item_code=None, start=0, limit=100
 				),
 			}
 		)
-	return {"rows": out, "start": start, "has_more": has_more}
+	last = rows[-1] if rows else None
+	next_cursor = (
+		{"d": str(last.posting_date), "c": str(last.creation), "n": last.name, "x": cint(last.idx)}
+		if has_more and last else None
+	)
+	return {"rows": out, "start": start, "has_more": has_more, "next": next_cursor}
+
+
+@frappe.whitelist()
+def search_ledger_locations(txt="", warehouse=None, limit=20):
+	"""Locations matching what was typed, within the current scope, a few at a time.
+
+	The ledger's location filter used to list every location up front; it asks for
+	a short page of matches instead.
+	"""
+	_require_access()
+	scope = _scope(warehouse)
+	cond, params = _wh_cond(scope, "warehouse")
+	limit = min(max(cint(limit) or 20, 1), 50)
+	txt = (txt or "").strip()
+	like = ""
+	if txt:
+		like = " and (name like %s or location_code like %s or location_name like %s or warehouse like %s)"
+		params = params + ["%" + txt + "%"] * 4
+	rows = frappe.db.sql(
+		"""
+		select name, location_code, location_name, warehouse, is_unassigned
+		from `tabWarehouse Location`
+		where is_active = 1 {cond} {like}
+		order by is_unassigned asc, location_code asc
+		limit {limit}
+		""".format(cond=cond, like=like, limit=limit),
+		params,
+		as_dict=True,
+	)
+	out = []
+	for r in rows:
+		if r.is_unassigned:
+			label = _("Unassigned Stock") + " — " + (r.warehouse or "")
+		else:
+			label = r.location_code or r.name
+			if r.location_name and r.location_name != r.location_code:
+				label += " · " + r.location_name
+			label += " (" + (r.warehouse or "") + ")"
+		out.append({"name": r.name, "label": label})
+	return out
 
 
 def _unassigned_names():
@@ -1636,3 +1707,301 @@ def transfer_apply(sheets):
 	from isoft_warehouse_location_management.isoft_location_manager import transfer
 
 	return transfer.apply_sheets(sheets)
+
+
+# ======================================================================
+# location inventory — count a location, post the difference
+# ======================================================================
+# A count sheet is the system quantity beside a counted quantity that starts blank.
+# Blank means "not counted yet", which is not zero: only counted lines are ever posted.
+def _inventory_location(location):
+	"""The location being counted — refused unless it is a real one the user may see."""
+	if not location:
+		frappe.throw(_("Choose the location being counted."))
+	loc = frappe.db.get_value(
+		"Warehouse Location",
+		location,
+		["name", "warehouse", "location_code", "location_name", "is_active", "is_unassigned"],
+		as_dict=True,
+	)
+	if not loc:
+		frappe.throw(_("Location {0} does not exist.").format(location))
+	if loc.is_unassigned:
+		frappe.throw(_("Unassigned stock is whatever is not on a location, so it cannot be counted as one."))
+	scope = _scope(None)
+	if scope is not None and loc.warehouse not in scope:
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	return loc
+
+
+def _inventory_row(item_code, system_qty, item_name=None, is_counted=0, counted_qty=0, current_qty=None):
+	item = frappe.db.get_value(
+		"Item",
+		item_code,
+		["item_name", "stock_uom", "is_stock_item", "has_serial_no", "has_batch_no"],
+		as_dict=True,
+	) or frappe._dict()
+	# A quantity alone cannot say which serial numbers or batches are on the shelf, so
+	# those lines are shown but cannot be counted here.
+	unsupported = None
+	if item.has_serial_no:
+		unsupported = "serial"
+	elif item.has_batch_no:
+		unsupported = "batch"
+	elif not item.is_stock_item:
+		unsupported = "not_stock"
+	counted = cint(is_counted)
+	return {
+		"item_code": item_code,
+		"item_name": item_name or item.item_name or item_code,
+		"stock_uom": item.stock_uom,
+		"system_qty": flt(system_qty),
+		# today's quantity, beside the one a counted line was taken against
+		"current_qty": flt(system_qty if current_qty is None else current_qty),
+		"is_counted": counted,
+		"counted_qty": flt(counted_qty) if counted else 0,
+		"unsupported": unsupported,
+	}
+
+
+@frappe.whitelist()
+def inventory_locations(warehouse=None):
+	"""Locations that can be counted, with what each holds and when it was last counted."""
+	_require_access()
+	from isoft_warehouse_location_management.isoft_location_manager.api import enabled_warehouse_set
+
+	scope = _scope(warehouse)
+	enabled = enabled_warehouse_set()
+	locs = frappe.get_all(
+		"Warehouse Location",
+		filters={"is_active": 1, "is_unassigned": 0},
+		fields=["name", "location_code", "location_name", "warehouse"],
+		limit_page_length=0,
+	)
+	locs = [
+		l for l in locs
+		if (scope is None or l.warehouse in scope) and (enabled is None or l.warehouse in enabled)
+	]
+	held = {
+		r.location: r
+		for r in frappe.db.sql(
+			"""select location, count(*) as items, sum(qty) as qty
+			   from `tabLocation Stock` where qty > 0 group by location""",
+			as_dict=True,
+		)
+	}
+	last = {
+		r.location: r.last_counted
+		for r in frappe.db.sql(
+			"""select location, max(posting_date) as last_counted
+			   from `tabLocation Inventory` where docstatus = 1 group by location""",
+			as_dict=True,
+		)
+	}
+	out = []
+	for l in sort_locations(locs):
+		h = held.get(l.name) or {}
+		out.append(
+			{
+				"name": l.name,
+				"location_code": l.location_code,
+				"location_name": l.location_name,
+				"warehouse": l.warehouse,
+				"items": cint(h.get("items")),
+				"qty": flt(h.get("qty")),
+				"last_counted": last.get(l.name),
+			}
+		)
+	return out
+
+
+@frappe.whitelist()
+def inventory_list(warehouse=None, limit=40):
+	"""Recent counts in scope. Drafts come first, so unfinished work is not lost below the fold."""
+	_require_access()
+	scope = _scope(warehouse)
+	rows = frappe.get_all(
+		"Location Inventory",
+		fields=[
+			"name", "location", "location_code", "warehouse", "docstatus", "posting_date",
+			"counted_lines", "difference_lines", "net_difference", "stock_reconciliation",
+			"counted_by", "modified",
+		],
+		order_by="modified desc",
+		limit_page_length=400,
+	)
+	if scope is not None:
+		rows = [r for r in rows if r.warehouse in scope]
+	rows.sort(key=lambda r: r.docstatus != 0)  # stable, so newest-first holds inside each group
+	return rows[: cint(limit) or 40]
+
+
+@frappe.whitelist()
+def inventory_sheet(location=None, name=None):
+	"""A count sheet: an existing count, or a fresh one for a location."""
+	_require_access()
+	from isoft_warehouse_location_management.isoft_location_manager.api import natural_key
+	from isoft_warehouse_location_management.isoft_location_manager.doctype.location_stock.location_stock import (
+		get_balance,
+	)
+
+	if name:
+		doc = frappe.get_doc("Location Inventory", name)
+		loc = _inventory_location(doc.location)
+		rows = []
+		for r in doc.items:
+			if doc.docstatus != 0:
+				# a posted count is shown exactly as it was posted
+				rows.append(_inventory_row(r.item_code, r.system_qty, r.item_name, r.is_counted, r.counted_qty))
+				continue
+			# A counted line keeps the quantity it was counted against, with today's beside it,
+			# so the sheet can show a line whose stock moved since.
+			now = get_balance(doc.location, r.item_code)
+			base = flt(r.system_qty) if cint(r.is_counted) else now
+			rows.append(_inventory_row(r.item_code, base, r.item_name, r.is_counted, r.counted_qty, now))
+		head = {
+			"name": doc.name,
+			"docstatus": doc.docstatus,
+			"remarks": doc.remarks,
+			"posting_date": doc.posting_date,
+			"counted_by": doc.counted_by,
+			"stock_reconciliation": doc.stock_reconciliation,
+			"location_movement": doc.location_movement,
+		}
+	else:
+		loc = _inventory_location(location)
+		stock = frappe.get_all(
+			"Location Stock",
+			filters={"location": loc.name, "qty": (">", 0)},
+			fields=["item_code", "item_name", "qty"],
+			limit_page_length=0,
+		)
+		rows = [_inventory_row(s.item_code, s.qty, s.item_name) for s in stock]
+		rows.sort(key=lambda r: natural_key(r["item_code"]))
+		head = {"name": None, "docstatus": 0}
+
+	head.update(
+		{
+			"location": loc.name,
+			"location_code": loc.location_code,
+			"location_name": loc.location_name,
+			"warehouse": loc.warehouse,
+			"other_drafts": frappe.get_all(
+				"Location Inventory",
+				filters={"location": loc.name, "docstatus": 0, "name": ("!=", head.get("name") or "")},
+				pluck="name",
+			),
+		}
+	)
+	return {"head": head, "rows": rows}
+
+
+@frappe.whitelist()
+def inventory_find_item(location, value):
+	"""A scanned barcode or a typed code, as a sheet row for this location."""
+	_require_access()
+	from isoft_warehouse_location_management.isoft_location_manager.doctype.location_stock.location_stock import (
+		get_balance,
+	)
+
+	loc = _inventory_location(location)
+	value = (value or "").strip()
+	if not value:
+		return None
+	item_code = frappe.db.get_value("Item", value, "name") or frappe.db.get_value(
+		"Item Barcode", {"barcode": value}, "parent"
+	)
+	if not item_code:
+		return None
+	return _inventory_row(item_code, get_balance(loc.name, item_code))
+
+
+def _inventory_doc(data):
+	data = frappe._dict(frappe.parse_json(data) if isinstance(data, str) else (data or {}))
+	loc = _inventory_location(data.location)
+	if data.name:
+		doc = frappe.get_doc("Location Inventory", data.name)
+		if doc.docstatus != 0:
+			frappe.throw(_("{0} has already been posted.").format(doc.name))
+		if doc.location != loc.name:
+			frappe.throw(_("A count cannot change the location it is counting."))
+	else:
+		doc = frappe.new_doc("Location Inventory")
+		doc.location = loc.name
+		doc.warehouse = loc.warehouse
+	# the sheet states what it showed the counter; the controller checks it again at posting
+	doc.flags.from_sheet = True
+	if "remarks" in data:
+		doc.remarks = data.remarks
+	doc.set("items", [])
+	seen = set()
+	for r in data.rows or []:
+		r = frappe._dict(r)
+		code = (r.item_code or "").strip()
+		if not code or code in seen or _inventory_row(code, 0)["unsupported"]:
+			continue
+		seen.add(code)
+		counted = cint(r.is_counted)
+		doc.append(
+			"items",
+			{
+				"item_code": code,
+				"is_counted": counted,
+				"counted_qty": flt(r.counted_qty) if counted else 0,
+				"system_qty": flt(r.system_qty) if counted else 0,
+			},
+		)
+	return doc
+
+
+@frappe.whitelist()
+def inventory_save(data):
+	"""Keep a count as a draft, so a counter can stop and come back to it."""
+	_require_preparer()
+	doc = _inventory_doc(data)
+	doc.flags.ignore_permissions = True
+	doc.save(ignore_permissions=True)
+	return inventory_sheet(name=doc.name)
+
+
+@frappe.whitelist()
+def inventory_submit(data):
+	"""Save and post in one step: a failure rolls both back, so nothing half-posts."""
+	_require_preparer()
+	doc = _inventory_doc(data)
+	doc.flags.ignore_permissions = True
+	doc.save(ignore_permissions=True)
+	doc.submit()
+	return {
+		"name": doc.name,
+		"stock_reconciliation": doc.stock_reconciliation,
+		"location_movement": doc.location_movement,
+		"counted_lines": doc.counted_lines,
+		"difference_lines": doc.difference_lines,
+		"net_difference": doc.net_difference,
+	}
+
+
+@frappe.whitelist()
+def inventory_cancel(name):
+	"""Undo a posted count: its reconciliation and its movement are cancelled with it."""
+	_require_preparer()
+	doc = frappe.get_doc("Location Inventory", name)
+	_inventory_location(doc.location)
+	if doc.docstatus != 1:
+		frappe.throw(_("Only a posted count can be cancelled."))
+	doc.flags.ignore_permissions = True
+	doc.cancel()
+	return {"name": doc.name, "docstatus": doc.docstatus}
+
+
+@frappe.whitelist()
+def inventory_discard(name):
+	"""Throw away a draft. A posted count is cancelled instead, never deleted."""
+	_require_preparer()
+	doc = frappe.get_doc("Location Inventory", name)
+	_inventory_location(doc.location)
+	if doc.docstatus != 0:
+		frappe.throw(_("Only a draft can be discarded; cancel a posted count instead."))
+	frappe.delete_doc("Location Inventory", name, ignore_permissions=True)
+	return {"discarded": name}

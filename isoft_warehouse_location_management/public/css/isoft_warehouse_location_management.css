@@ -10,32 +10,67 @@
  * valid syntax, just not a stylesheet.
  *
  * Runtime theme colours are set as custom properties on :root by `apply_theme()`.
+ *
+ * The look follows Isoft Invenza: a collapsible left sidebar, the slate surface palette,
+ * flat 8-10px cards and meaning-coloured icons. Light and dark follow the desk theme.
  */
 
-:root{--ip-line:#e2e8f0;--ip-subtle:#f1f5f9;--ip-border-strong:#cbd5e1;--ip-ok-bg:#f0fdfa;--ip-ok-border:#99f6e4;--ip-ok-strong:#ccfbf1;--ip-bad-bg:#fef2f2;--ip-bad-border:#fecaca;--ip-bad-text:#9b2f2f;--ip-primary:#2563eb;--ip-primary-dark:#1e40af;--ip-accent:#3b82f6;--ip-bg:#f6f8fb;--ip-card:#fff;--ip-border:#e6eaf0;--ip-text:#1f2937;--ip-muted:#6b7280}
-[data-theme="dark"]{--ip-line:#32373f;--ip-subtle:#272b33;--ip-border-strong:#454b56;--ip-ok-bg:#0f2620;--ip-ok-border:#1f5f52;--ip-ok-strong:#13342c;--ip-bad-bg:#2a1719;--ip-bad-border:#5f2b2e;--ip-bad-text:#f0a3a3;--ip-bg:#1a1d23;--ip-card:#21242c;--ip-border:#32373f;--ip-text:#e6e8ec;--ip-muted:#9aa1ac}
-.ip-root{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--ip-bg);color:var(--ip-text);padding:18px;min-height:82vh}
+:root{--ip-line:#e2e8f0;--ip-subtle:#f8fafc;--ip-border-strong:#cbd5e1;--ip-ok-bg:#f0fdf4;--ip-ok-border:#bbf7d0;--ip-ok-strong:#dcfce7;--ip-bad-bg:#fef2f2;--ip-bad-border:#fecaca;--ip-bad-text:#b91c1c;--ip-primary:#2563eb;--ip-primary-dark:#1e40af;--ip-accent:#3b82f6;--ip-bg:#f1f5f9;--ip-card:#fff;--ip-border:#e2e8f0;--ip-text:#0f172a;--ip-text-2:#334155;--ip-muted:#64748b;--ip-faint:#94a3b8;--ip-ok:#15803d;--ip-warn:#b45309;--ip-bad:#b91c1c;--ip-buy:#8b5cf6;--ip-perf:#0f8b8d}
+[data-theme="dark"]{--ip-line:#334155;--ip-subtle:#182236;--ip-border-strong:#475569;--ip-ok-bg:#10261b;--ip-ok-border:#1f5135;--ip-ok-strong:#163a28;--ip-bad-bg:#2a1719;--ip-bad-border:#5f2b2e;--ip-bad-text:#f87171;--ip-bg:#0b1220;--ip-card:#1e293b;--ip-border:#334155;--ip-text:#f1f5f9;--ip-text-2:#cbd5e1;--ip-muted:#94a3b8;--ip-faint:#64748b;--ip-ok:#4ade80;--ip-warn:#fbbf24;--ip-bad:#f87171;--ip-buy:#a78bfa;--ip-perf:#2dd4bf}
+.ip-root{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--ip-bg);color:var(--ip-text);padding:16px 20px;min-height:82vh}
 .ip-drawer-overlay{color:var(--ip-text)}
-.ip-bar{display:flex;align-items:center;gap:16px;background:var(--ip-card);border:1px solid var(--ip-border);border-radius:14px;padding:12px 18px;margin-bottom:18px;box-shadow:0 6px 22px rgba(17,24,39,.06);flex-wrap:wrap;position:sticky;top:0;z-index:1040}
-/* The bar sticks to the top of the viewport. Two details keep it honest: it stays
-   under Bootstrap's .modal (1050) so dialogs are never behind it, and the ::before
-   paints the page background across the 18px of .ip-root padding above it, so rows
-   do not show through the gap on their way past. */
-.ip-bar::before{content:'';position:absolute;left:-19px;right:-19px;top:-19px;height:19px;background:var(--ip-bg)}
-/* Narrow screens wrap the bar onto three rows; pinning that much of a short
-   viewport costs more than it buys, so there it scrolls away like anything else. */
-@media (max-width:768px){.ip-bar{position:static}.ip-bar::before{display:none}}
-.ip-brand{display:flex;align-items:center;gap:12px}
-.ip-tabs{margin-left:auto}
-.ip-brand-logo{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(135deg,var(--ip-primary),var(--ip-accent));box-shadow:0 4px 12px rgba(37,99,235,.38)}
-.ip-brand-logo svg{width:20px;height:20px}
-.ip-brand-title{font-weight:700;font-size:15px}.ip-brand-sub{font-size:11px;color:var(--ip-muted)}
-.ip-tabs{display:flex;gap:8px;flex-wrap:wrap}
-.ip-tab{border:1px solid var(--ip-border);background:var(--ip-card);color:var(--ip-muted);border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
-.ip-tab:hover{transform:translateY(-1px);border-color:var(--ip-accent);color:var(--ip-text)}
-.ip-tab.active{background:var(--ip-primary);color:#fff;border-color:var(--ip-primary)}
-.ip-scope{display:flex;align-items:center;gap:8px;color:var(--ip-muted)}
-.ip-scope-select{min-width:200px}
+/* ================= sidebar (as in Isoft Invenza) ================= */
+/* --ip-sb is the one width everything follows: the sidebar, and the room the page
+   leaves for it. Collapsing is a single body class. The desk forces
+   body{padding:0 !important} on small screens, so the offset needs !important too. */
+body.ip-standalone{--ip-sb:224px;padding-left:var(--ip-sb)!important;transition:padding-left .18s cubic-bezier(.4,0,.2,1)}
+body.ip-standalone.ip-sb-collapsed{--ip-sb:62px}
+/* The page itself takes the app background, so a short screen does not end in the desk's colour. */
+body.ip-standalone,body.ip-standalone .page-container,body.ip-standalone .main-section{background:var(--ip-bg)}
+body.ip-standalone .ip-root{min-height:100vh;box-sizing:border-box}
+.ip-sidebar{display:none}
+body.ip-standalone .ip-sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--ip-sb);z-index:1020;display:flex;flex-direction:column;
+	background:var(--ip-card);color:var(--ip-text);border-right:1px solid var(--ip-border);overflow:hidden;
+	font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;transition:width .18s cubic-bezier(.4,0,.2,1)}
+.ip-brand{display:flex;align-items:center;gap:10px;min-height:58px;padding:12px;border-bottom:1px solid var(--ip-border);white-space:nowrap;flex-shrink:0}
+.ip-brand-logo{width:34px;height:34px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;background:var(--ip-primary)}
+.ip-brand-logo svg{width:19px;height:19px}
+.ip-brand-text{display:flex;flex-direction:column;min-width:0;line-height:1.2}
+.ip-brand-title{font-weight:700;font-size:14px;letter-spacing:-.01em}.ip-brand-sub{font-size:10.5px;font-weight:500;color:var(--ip-muted);letter-spacing:.02em}
+.ip-nav{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding:8px;display:flex;flex-direction:column;gap:2px}
+.ip-nav::-webkit-scrollbar{width:6px}.ip-nav::-webkit-scrollbar-thumb{background:var(--ip-border);border-radius:3px}
+.ip-nav .ip-tab{display:flex;align-items:center;gap:11px;width:100%;padding:9px 10px;border:1px solid transparent;border-radius:8px;background:transparent;
+	color:var(--ip-text-2);font-size:13px;font-weight:500;line-height:1.2;text-align:left;white-space:nowrap;cursor:pointer;transition:background .15s,color .15s}
+.ip-nav .ip-tab i{width:18px;flex-shrink:0;text-align:center;font-size:14px}
+.ip-nav .ip-tab:hover{background:var(--ip-subtle);color:var(--ip-text)}
+.ip-nav .ip-tab.active{background:color-mix(in srgb,var(--ip-primary) 10%,var(--ip-card));color:var(--ip-primary);font-weight:600}
+.ip-nav-sep{height:1px;background:var(--ip-border);margin:6px 4px;flex-shrink:0}
+/* Icon meaning-colours, as in Invenza: a colour says the same thing on every screen. */
+.ip-i-item{color:var(--ip-primary)!important}.ip-i-stock{color:var(--ip-warn)!important}.ip-i-money{color:var(--ip-ok)!important}
+.ip-i-buy{color:var(--ip-buy)!important}.ip-i-perf{color:var(--ip-perf)!important}.ip-i-alert{color:var(--ip-bad)!important}.ip-i-muted{color:var(--ip-faint)!important}
+.ip-sb-foot{flex-shrink:0;display:flex;flex-direction:column;gap:4px;padding:8px;border-top:1px solid var(--ip-border)}
+.ip-scope{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:9px;background:var(--ip-subtle);border:1px solid var(--ip-border);color:var(--ip-muted)}
+.ip-scope>i{width:18px;flex-shrink:0;text-align:center;font-size:13px;color:var(--ip-muted)}
+.ip-scope-select{flex:1 1 auto;min-width:0;width:100%;border:0!important;background:transparent!important;padding:2px 0!important;font-size:12.5px;font-weight:600;color:var(--ip-text);cursor:pointer;text-overflow:ellipsis}
+.ip-scope-select option{color:#1e293b;background:#fff}
+[data-theme="dark"] .ip-scope-select option{color:#f1f5f9;background:#0f172a}
+.ip-sb-toggle{display:flex;align-items:center;gap:11px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:var(--ip-muted);font-size:12.5px;cursor:pointer;white-space:nowrap}
+.ip-sb-toggle i{width:18px;text-align:center;font-size:14px}
+.ip-sb-toggle:hover{background:var(--ip-subtle);color:var(--ip-text)}
+.ip-sidebar *:focus{outline:none!important}
+.ip-sidebar button:focus-visible,.ip-sidebar select:focus-visible{box-shadow:0 0 0 3px color-mix(in srgb,var(--ip-primary) 28%,transparent)!important}
+/* Icon rail: labels are hidden, never removed, so ids and handlers stay as they were. */
+body.ip-sb-collapsed .ip-brand-text,body.ip-sb-collapsed .ip-nav .ip-tab span,body.ip-sb-collapsed .ip-scope-select,body.ip-sb-collapsed .ip-sb-toggle span{display:none}
+body.ip-sb-collapsed .ip-brand{justify-content:center;padding:12px 6px}
+body.ip-sb-collapsed .ip-nav .ip-tab,body.ip-sb-collapsed .ip-sb-toggle,body.ip-sb-collapsed .ip-scope{justify-content:center;gap:0;padding-left:6px;padding-right:6px}
+body.ip-sb-collapsed .ip-scope{cursor:pointer}
+/* Narrow screens get the rail regardless; there is no room for labels. */
+@media (max-width:900px){
+	body.ip-standalone{--ip-sb:62px}
+	body.ip-standalone .ip-brand-text,body.ip-standalone .ip-nav .ip-tab span,body.ip-standalone .ip-scope-select,body.ip-standalone .ip-sb-toggle{display:none}
+	body.ip-standalone .ip-brand{justify-content:center;padding:12px 6px}
+	body.ip-standalone .ip-nav .ip-tab,body.ip-standalone .ip-scope{justify-content:center;gap:0;padding-left:6px;padding-right:6px}
+}
 .ip-input{border:1px solid var(--ip-border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--ip-card);color:var(--ip-text)}
 .ip-location-title{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ip-muted);margin:6px 2px 12px}
 .ip-scope-chip{display:inline-block;margin-left:8px;padding:2px 10px;border-radius:20px;background:var(--ip-bg);border:1px solid var(--ip-border);font-size:11px;font-weight:600;color:var(--ip-text);letter-spacing:0;text-transform:none}
@@ -173,6 +208,12 @@
 
 /* the handle sits over the board — give the board room to breathe under it */
 .ip-has-dock .ip-content{padding-bottom:66px}
+/* Locations: the toolbar stays, the board scrolls inside itself (its height is set by
+   fit_explorer). The inner right padding keeps cards clear of the scrollbar. */
+.ip-explorer{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding-right:6px;margin-right:-6px}
+.ip-explorer::-webkit-scrollbar{width:8px}
+.ip-explorer::-webkit-scrollbar-thumb{background:var(--ip-border-strong);border-radius:4px}
+.ip-explorer::-webkit-scrollbar-track{background:transparent}
 .ip-row-unassigned td:first-child{color:#b45309;font-weight:600}
 /* --- resolved location controls --- */
 .ip-locctl{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:32px}
@@ -310,6 +351,30 @@
 }
 
 /* ---- ledger ---- */
+.ip-led-toolbar{gap:10px}
+.ip-led-date{display:flex;align-items:center;gap:6px;margin:0;font-size:12px;font-weight:600;color:var(--ip-muted)}
+.ip-led-date .ip-input{height:36px;padding:6px 8px}
+.ip-led-locbox{min-width:260px}
+.ip-led-locbox .awesomplete{flex:1 1 auto;position:relative;min-width:0}
+.ip-led-locbox .ip-input{width:100%;min-width:0}
+.ip-led-clear{border:0;background:none;color:var(--ip-muted);font-size:18px;line-height:1;cursor:pointer;padding:0 2px}
+.ip-led-clear:hover{color:var(--ip-text)}
+.ip-led-toolbar .awesomplete>ul{z-index:40;min-width:100%;width:max-content;max-width:420px;max-height:320px;overflow:auto;
+	background:var(--ip-card);color:var(--ip-text);border:1px solid var(--ip-border);border-radius:8px;box-shadow:0 10px 30px rgba(15,23,42,.16);margin-top:6px}
+.ip-led-toolbar .awesomplete>ul>li{font-size:12.5px;padding:7px 10px}
+.ip-led-toolbar .awesomplete>ul>li[aria-selected="true"],.ip-led-toolbar .awesomplete>ul>li:hover{background:var(--ip-subtle);color:var(--ip-text)}
+/* the table scrolls inside its card; its header stays in view */
+.ip-led-card{padding:0;margin-bottom:0;overflow:hidden}
+.ip-ledwrap{overflow:auto;overscroll-behavior:contain}
+.ip-ledger{border-collapse:separate;border-spacing:0}
+.ip-ledger thead th{position:sticky;top:0;z-index:2}
+.ip-ledger th:first-child,.ip-ledger td:first-child{padding-left:18px}
+.ip-ledger th:last-child,.ip-ledger td:last-child{padding-right:18px}
+.ip-led-foot{padding:12px 18px 14px;text-align:center}
+.ip-led-foot:empty{padding:0}
+.ip-led-state{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--ip-muted)}
+.ip-spin-sm{width:16px;height:16px;border-width:2px}
+.ip-led-end{font-size:11.5px;color:var(--ip-faint)}
 .ip-ledger td{vertical-align:middle}
 .ip-led-when{white-space:nowrap;font-size:12px}
 .ip-led-when span{display:block;color:var(--ip-muted);font-size:10.5px}
@@ -582,3 +647,136 @@
 .ip-switch-text { display: flex; flex-direction: column; gap: 2px; }
 .ip-switch-label { font-size: 12.5px; font-weight: 600; color: var(--ip-text); }
 .ip-switch-note { font-size: 11.5px; color: var(--ip-muted); line-height: 1.5; }
+
+/* ================= Invenza look ================= */
+/* The screens keep their structure; these bring the surfaces in line with Isoft
+   Invenza: flatter cards, softer icon tiles, quieter buttons and plain table headers. */
+.ip-root *:focus{outline:none}
+.ip-root .ip-btn:focus-visible,.ip-root button:focus-visible,.ip-root .ip-input:focus-visible,.ip-root select:focus-visible{box-shadow:0 0 0 3px color-mix(in srgb,var(--ip-primary) 28%,transparent)}
+.ip-input{border-color:var(--ip-border-strong);border-radius:6px}
+.ip-input:focus{border-color:var(--ip-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--ip-primary) 22%,transparent)}
+.ip-search{border-color:var(--ip-border-strong);border-radius:6px}
+.ip-search .ip-input{border:0}
+
+.ip-card,.ip-kpi,.ip-col,.ip-panel,.ip-reqcard,.ip-tpanel,.ip-zone{border-radius:10px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+[data-theme="dark"] .ip-card,[data-theme="dark"] .ip-kpi,[data-theme="dark"] .ip-col,[data-theme="dark"] .ip-panel,[data-theme="dark"] .ip-reqcard,[data-theme="dark"] .ip-tpanel,[data-theme="dark"] .ip-zone{box-shadow:none}
+.ip-tile,.ip-cardlet,.ip-dock-card{border-radius:8px}
+.ip-card-head h3,.ip-panel-title{font-weight:600}
+.ip-click:hover{transform:none;border-color:var(--ip-border-strong);box-shadow:0 4px 12px rgba(15,23,42,.07)}
+
+/* KPI icons: a soft tint of the meaning colour instead of a saturated gradient. */
+.ip-kpi-icon{width:40px;height:40px;border-radius:10px;font-size:17px;color:var(--ip-primary);background:color-mix(in srgb,var(--ip-primary) 12%,var(--ip-card))}
+.ip-kpi-blue .ip-kpi-icon{color:var(--ip-primary);background:color-mix(in srgb,var(--ip-primary) 12%,var(--ip-card))}
+.ip-kpi-green .ip-kpi-icon{color:var(--ip-ok);background:color-mix(in srgb,var(--ip-ok) 13%,var(--ip-card))}
+.ip-kpi-amber .ip-kpi-icon{color:var(--ip-warn);background:color-mix(in srgb,var(--ip-warn) 14%,var(--ip-card))}
+.ip-kpi-red .ip-kpi-icon{color:var(--ip-bad);background:color-mix(in srgb,var(--ip-bad) 13%,var(--ip-card))}
+.ip-kpi-value,.ip-donut-num,.ip-cover-pct{font-weight:700}
+
+.ip-btn{border-radius:6px;font-weight:500;padding:8px 14px}
+.ip-btn-primary{box-shadow:none}
+.ip-btn-primary:hover{transform:none}
+.ip-btn-success{background:var(--ip-ok)}
+.ip-btn-light{background:var(--ip-card);border-color:var(--ip-border-strong);color:var(--ip-text-2)}
+.ip-btn-light:hover{background:var(--ip-subtle);color:var(--ip-text)}
+[data-theme="dark"] .ip-btn-success{color:#0b1220}
+
+.ip-seg,.ip-viewtoggle{border-radius:8px}
+.ip-vt,.ip-bt{border-radius:6px}
+.ip-seg button.active,.ip-vt.active,.ip-bt.active,.ip-viewtoggle .ip-vt.on{background:color-mix(in srgb,var(--ip-primary) 12%,var(--ip-card));color:var(--ip-primary);border-color:color-mix(in srgb,var(--ip-primary) 35%,var(--ip-border))}
+
+.ip-table th{text-transform:none;letter-spacing:0;font-size:11.5px;font-weight:600;color:var(--ip-muted);background:var(--ip-subtle)}
+.ip-table td{color:var(--ip-text-2)}
+
+.ip-pill{font-weight:600;padding:2px 9px}
+.ip-pill.green{background:color-mix(in srgb,var(--ip-ok) 13%,var(--ip-card));color:var(--ip-ok)}
+.ip-pill.blue{background:color-mix(in srgb,var(--ip-primary) 12%,var(--ip-card));color:var(--ip-primary)}
+.ip-pill.amber{background:color-mix(in srgb,var(--ip-warn) 15%,var(--ip-card));color:var(--ip-warn)}
+
+.ip-col-count{border-radius:999px}
+.ip-dock{border-radius:12px 12px 0 0}
+.ip-dock-more,.ip-loc-return{border-radius:6px}
+
+/* ================= focus: no hard outline on click ================= */
+/* Clicking in the app drew the browser's outline, a dark box around the unassigned dock,
+   its search, chips and buttons. The dock is mounted on <body> and the location controls
+   live on documents, so they are named here as well as the page. Keyboard focus still gets
+   a soft ring, and a search box being typed in shows it around the whole box. */
+.ip-root *:focus,.ip-sidebar *:focus,.ip-dock:focus,.ip-dock *:focus,.ip-locctl *:focus{outline:none!important}
+.ip-root button:focus-visible,.ip-dock button:focus-visible,.ip-locctl button:focus-visible{outline:none!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--ip-primary) 28%,transparent)!important}
+.ip-dock-handle:focus-visible{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--ip-primary) 45%,transparent)!important}
+.ip-search:focus-within{border-color:var(--ip-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--ip-primary) 18%,transparent)}
+.ip-search .ip-input:focus,.ip-search .ip-input:focus-visible{border:0!important;box-shadow:none!important}
+
+/* ================= location inventory ================= */
+/* Two text tones this screen needs that the palette did not have yet. Declared here, in
+   both themes, so a gain and a loss stay legible on either ground. */
+:root{--ip-ok-text:#047857;--ip-warn-text:#b45309}
+[data-theme="dark"]{--ip-ok-text:#6ee7b7;--ip-warn-text:#fbbf24}
+
+.ip-inv-intro{flex:1;min-width:240px;font-size:12.5px;line-height:1.5}
+.ip-inv-num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ip-inv-tablewrap{overflow-x:auto}
+.ip-inv-list tr.ip-inv-open{cursor:pointer}
+.ip-inv-list tr.ip-inv-open:hover td{background:var(--ip-subtle)}
+
+.ip-inv-plus{color:var(--ip-ok-text);font-weight:600}
+.ip-inv-minus{color:var(--ip-bad-text);font-weight:600}
+.ip-inv-zero{color:var(--ip-muted)}
+
+.ip-inv-status{display:inline-block;vertical-align:middle;margin-left:6px;padding:2px 9px;border-radius:20px;
+  font-size:11px;font-weight:600;border:1px solid var(--ip-line);color:var(--ip-muted);background:var(--ip-subtle)}
+.ip-inv-status.is-draft,.ip-inv-status.is-new{color:var(--ip-warn-text);background:rgba(180,83,9,.10);border-color:rgba(180,83,9,.30)}
+.ip-inv-status.is-posted{color:var(--ip-ok-text);background:var(--ip-ok-bg);border-color:var(--ip-ok-border)}
+
+.ip-inv-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+.ip-inv-title{flex:1;min-width:200px}
+.ip-inv-loc{font-size:18px;font-weight:700;color:var(--ip-text)}
+.ip-inv-sub{font-size:12px;margin-top:2px}
+.ip-inv-actions{display:flex;gap:8px;flex-wrap:wrap}
+.ip-inv-actions .ip-btn:disabled{opacity:.55;cursor:default;transform:none}
+
+.ip-inv-note{margin-bottom:12px;padding:9px 12px;border-radius:8px;font-size:12.5px;line-height:1.5;
+  color:var(--ip-text);background:var(--ip-subtle);border:1px solid var(--ip-line)}
+.ip-inv-note.is-warn{background:rgba(180,83,9,.08);border-color:rgba(180,83,9,.32)}
+.ip-inv-note.is-done{background:var(--ip-ok-bg);border-color:var(--ip-ok-border)}
+
+.ip-inv-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px}
+.ip-inv-stat{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border-radius:10px;
+  background:var(--ip-card);border:1px solid var(--ip-line)}
+.ip-inv-stat span{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--ip-muted)}
+.ip-inv-stat b{font-size:18px;color:var(--ip-text);font-variant-numeric:tabular-nums}
+.ip-inv-stat b.ip-inv-plus{color:var(--ip-ok-text)}
+.ip-inv-stat b.ip-inv-minus{color:var(--ip-bad-text)}
+
+.ip-inv-scan{margin-bottom:12px}
+.ip-inv-scan .ip-input{width:100%;min-width:0}
+
+.ip-inv-table td{vertical-align:middle}
+.ip-inv-code{font-weight:600;color:var(--ip-text)}
+.ip-inv-name{font-size:12px}
+.ip-inv-uom{font-size:11px}
+.ip-inv-in{width:110px;padding:7px 9px;font-size:14px;text-align:right;font-variant-numeric:tabular-nums}
+.ip-inv-table tr.is-counted td{background:var(--ip-subtle)}
+.ip-inv-table tr.is-hit td{box-shadow:inset 3px 0 0 var(--ip-primary)}
+.ip-inv-table tr.is-locked{opacity:.62}
+.ip-inv-empty{padding:26px 10px !important;text-align:center}
+.ip-inv-rowact{text-align:right;white-space:nowrap}
+.ip-inv-rowact button{width:30px;height:30px;margin-left:4px;border-radius:6px;cursor:pointer;font-size:14px;line-height:1;
+  color:var(--ip-muted);background:var(--ip-card);border:1px solid var(--ip-line)}
+.ip-inv-rowact button:hover{color:var(--ip-text);border-color:var(--ip-border-strong)}
+
+.ip-inv-pick{display:flex;flex-direction:column;gap:6px;max-height:55vh;overflow:auto;margin-top:6px}
+.ip-inv-pickrow{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;border-radius:8px;cursor:pointer;
+  text-align:left;color:var(--ip-text);background:var(--ip-card);border:1px solid var(--ip-line)}
+.ip-inv-pickrow:hover{border-color:var(--ip-primary)}
+.ip-inv-pickrow b{min-width:90px}
+.ip-inv-pickrow .ip-muted{font-size:12px}
+.ip-inv-pickmeta{margin-left:auto;font-size:11.5px;line-height:1.35;color:var(--ip-muted);text-align:right}
+
+@media (max-width:700px){
+  .ip-inv-in{width:84px}
+  .ip-inv-actions{width:100%}
+  .ip-inv-actions .ip-btn{flex:1;justify-content:center}
+}
+.ip-inv-moved{margin-top:3px;font-size:11.5px;font-weight:600;color:var(--ip-warn-text)}
+.ip-inv-table tr.is-moved td{background:rgba(180,83,9,.07)}
