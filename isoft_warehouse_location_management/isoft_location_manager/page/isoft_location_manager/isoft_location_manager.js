@@ -398,19 +398,8 @@ isoft_warehouse_location_management.App = class {
 				this.paint_locations($wrap);
 			});
 		};
-		// zones are cheap and rarely change, so the filter is filled once per visit
-		this.api('get_zones', { warehouse: this.scope }).then((zones) => {
-			this.zones = zones || [];
-			const $sel = this.$content.find('.ip-zone-filter');
-			this.zones.forEach((z) => $sel.append(
-				`<option value="${esc(z.name)}"${z.name === this.zoneFilter ? ' selected' : ''}>${
-					esc(z.zone_name || z.zone_code)}</option>`));
-			if (this.zoneFilter && !this.zones.some((z) => z.name === this.zoneFilter)) {
-				this.zoneFilter = '';
-			}
-			$sel.append(`<option value="__none__"${this.zoneFilter === '__none__' ? ' selected' : ''}>${
-				esc(__('Not in a zone'))}</option>`);
-		});
+		// zones are cheap and rarely change; the helper also serves the quiet refresh
+		this.fill_zone_filter();
 		load();
 
 		this.$content.find('.ip-vt').on('click', (e) => {
@@ -442,6 +431,60 @@ isoft_warehouse_location_management.App = class {
 	// starts, then gives back whatever that pushed below the fold — paddings, the edge of
 	// its card, the room kept for the dock's handle — so the page itself never scrolls.
 	// Re-measured when the window or the toolbar (which wraps when narrow) changes size.
+	// The zone filter's options, for the first render and for the quiet refresh, so a zone
+	// added, renamed or deleted in the Zones dialog appears without rebuilding the board.
+	// "Not in a zone" is not a zone, so it is no longer mistaken for one that was deleted
+	// and reset every time the view was drawn.
+	fill_zone_filter() {
+		const esc = frappe.utils.escape_html;
+		return this.api('get_zones', { warehouse: this.scope }).then((zones) => {
+			this.zones = zones || [];
+			const $sel = this.$content.find('.ip-zone-filter');
+			$sel.find('option:not(:first)').remove();
+			this.zones.forEach((z) => $sel.append(
+				`<option value="${esc(z.name)}"${z.name === this.zoneFilter ? ' selected' : ''}>${
+					esc(z.zone_name || z.zone_code)}</option>`));
+			let reset = false;
+			if (this.zoneFilter && this.zoneFilter !== '__none__' && !this.zones.some((z) => z.name === this.zoneFilter)) {
+				this.zoneFilter = '';
+				reset = true;
+			}
+			$sel.append(`<option value="__none__"${this.zoneFilter === '__none__' ? ' selected' : ''}>${
+				esc(__('Not in a zone'))}</option>`);
+			$sel.val(this.zoneFilter || '');
+			// the board may already be drawn with a zone that no longer exists
+			const $wrap = this.$content.find('.ip-explorer');
+			if (reset && this.allSecs && $wrap.length) this.paint_locations($wrap);
+		});
+	}
+
+	// After an action on the board the data changed, not the page. show() rebuilt all of
+	// it — the toolbar, a spinner in place of the board, the dock torn down and rebuilt,
+	// the scroll back to the top — so every drop looked like a reload. This asks for the
+	// same data and repaints the board where it is. The dock is only rebuilt when the
+	// action touched unassigned stock, and keeps its search when it is.
+	refresh_warehouse(opts) {
+		opts = opts || {};
+		const $wrap = this.$content && this.$content.find('.ip-explorer');
+		if (this.current !== 'warehouse' || !$wrap || !$wrap.length) return this.show('warehouse');
+		if (opts.zones) this.fill_zone_filter();
+		const top = $wrap.scrollTop();
+		this.api('get_locations_with_items', { warehouse: this.scope, search: this.whSearch || '' }).then((secs) => {
+			if (!secs || !secs.length) return this.render_warehouse();
+			this.allSecs = secs;
+			this.paint_locations($wrap);
+			$wrap.scrollTop(top);
+		});
+		if (opts.dock && (this.ctx.is_preparer || this.ctx.can_manage)) {
+			const search = (this.dock && this.dock.search) || '';
+			this.teardown_dock();
+			this.render_unassigned_dock();
+			this.fit_explorer();
+			$wrap.scrollTop(top);
+			if (search) $('.ip-dock-search').val(search).trigger('input');
+		}
+	}
+
 	fit_explorer(selector) {
 		const $wrap = this.$content.find(selector || '.ip-explorer');
 		if (!$wrap.length) return;
@@ -564,7 +607,7 @@ isoft_warehouse_location_management.App = class {
 					let msg = __('{0} location(s) created', [res.created]);
 					if (res.skipped && res.skipped.length) msg += ' · ' + __('skipped (existing): {0}', [res.skipped.join(', ')]);
 					frappe.show_alert({ message: msg, indicator: res.created ? 'green' : 'orange' });
-					this.show('warehouse');
+					this.refresh_warehouse();
 				});
 			},
 		});
@@ -667,7 +710,7 @@ isoft_warehouse_location_management.App = class {
 							: __('{0} deleted', [info.label]),
 						indicator: 'green',
 					});
-					this.render_warehouse();
+					this.refresh_warehouse({ dock: back > 0 });
 				});
 			});
 		});
@@ -864,7 +907,7 @@ isoft_warehouse_location_management.App = class {
 				save_settings().then(() => {
 					d.hide();
 					frappe.show_alert({ message: __('Saved'), indicator: 'green' });
-					this.show('warehouse');
+					this.refresh_warehouse();
 				});
 				return;
 			}
@@ -884,7 +927,7 @@ isoft_warehouse_location_management.App = class {
 					}
 					return save_settings();
 				})
-				.then(() => { d.hide(); this.show('warehouse'); });
+				.then(() => { d.hide(); this.refresh_warehouse({ dock: true }); });
 		};
 
 		this.api('get_location_contents', { location: name }).then((r) => {
@@ -1082,7 +1125,7 @@ isoft_warehouse_location_management.App = class {
 							indicator: 'blue',
 						});
 					}
-					this.render_warehouse();
+					this.refresh_warehouse();
 				});
 		});
 	}
@@ -1170,7 +1213,7 @@ isoft_warehouse_location_management.App = class {
 		});
 
 		load();
-		d.onhide = () => this.render_warehouse();
+		d.onhide = () => this.refresh_warehouse({ zones: true });
 		d.show();
 	}
 
@@ -1578,7 +1621,7 @@ isoft_warehouse_location_management.App = class {
 						message: __('Put {0} away in {1}', [format_number(qty), values.location]),
 						indicator: 'green',
 					});
-					this.show('warehouse');
+					this.refresh_warehouse({ dock: true });
 				});
 			},
 		});
@@ -1624,7 +1667,7 @@ isoft_warehouse_location_management.App = class {
 							: __('Put {0} away in {1}', [format_number(qty), to_location]),
 						indicator: 'green',
 					});
-					this.show('warehouse');
+					this.refresh_warehouse({ dock: !dragged.from });
 				});
 			},
 		});
@@ -1666,7 +1709,7 @@ isoft_warehouse_location_management.App = class {
 								: __('Returned {0} to unassigned', [format_number(-moved)])),
 						indicator: moved === 0 ? 'blue' : 'green',
 					});
-					this.show('warehouse');
+					this.refresh_warehouse({ dock: moved !== 0 });
 				});
 			},
 		});
@@ -2087,10 +2130,10 @@ isoft_warehouse_location_management.App = class {
 	// counter had simply not reached.
 	render_inventory() {
 		const inv = this.inv;
-		if (inv && inv.open) {
-			// coming back to the tab with unsaved counts: repaint them rather than refetch
-			return inv.rows && inv.dirty ? this.paint_inventory_sheet() : this.render_inventory_sheet();
-		}
+		// Unsaved counts survive a trip to another tab. Otherwise the section's own tab is the
+		// way home, back to the list of counts.
+		if (inv && inv.open && inv.dirty && inv.rows) return this.paint_inventory_sheet();
+		this.inv = null;
 		const esc = frappe.utils.escape_html;
 		this.$content.html(`
 			<div class="ip-toolbar">
@@ -2323,6 +2366,32 @@ isoft_warehouse_location_management.App = class {
 
 		paint_rows();
 		summarise();
+
+		// Leaving and cancelling apply to every sheet, posted or not, so they are bound before
+		// the return below that skips what only a draft can do. They were bound nowhere
+		// before, which left Counts dead on every sheet.
+		$c.find('.ip-inv-back').on('click', () => {
+			const leave = () => {
+				this.inv = null;
+				this.render_inventory();
+			};
+			if (inv.dirty) frappe.confirm(__('Leave without saving? The quantities entered since the last save will be lost.'), leave);
+			else leave();
+		});
+
+		$c.find('.ip-inv-cancel').on('click', () => {
+			frappe.confirm(__('Cancel {0}? Its Stock Reconciliation and location movement are cancelled with it, and the location goes back to what it held before the count.', [h.name]), () => {
+				const $btn = $c.find('.ip-inv-cancel').prop('disabled', true);
+				this.api('inventory_cancel', { name: h.name })
+					.then(() => {
+						frappe.show_alert({ message: __('{0} cancelled', [h.name]), indicator: 'orange' });
+						this.inv = { open: true, name: h.name };
+						this.render_inventory_sheet();
+					})
+					.always(() => $btn.prop('disabled', false));
+			});
+		});
+
 		if (!editable) return;
 
 		$tbody.on('input', '.ip-inv-in', (e) => {
@@ -2482,8 +2551,17 @@ isoft_warehouse_location_management.App = class {
 								: __('Count posted — nothing to adjust'),
 							indicator: 'green',
 						});
-						this.inv = { open: true, name: res.name };
-						this.render_inventory_sheet();
+						// The sheet already holds what was posted, so it is shown as posted
+						// straight away rather than fetched again.
+						inv.name = res.name;
+						inv.dirty = false;
+						inv.head = Object.assign({}, h, {
+							name: res.name, docstatus: 1, other_drafts: [],
+							stock_reconciliation: res.stock_reconciliation,
+							location_movement: res.location_movement,
+						});
+						inv.rows.forEach((r) => { r.current_qty = r.system_qty; });
+						this.paint_inventory_sheet();
 					})
 					.always(() => busy(false));
 			});

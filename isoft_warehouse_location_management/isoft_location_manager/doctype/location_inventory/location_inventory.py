@@ -51,8 +51,8 @@ class LocationInventory(Document):
 		# here; backdating would reconcile against a balance nobody counted.
 		self.posting_date = nowdate()
 		self.posting_time = nowtime()
-		self._refresh_rows()
-		self._summarise()
+		# validate has just refreshed the rows and the summary in this same pass, so they are
+		# not read again here; the moved-stock check below reads the balances itself.
 		if not self.counted_lines:
 			frappe.throw(
 				_("Nothing has been counted yet. Enter a quantity on at least one line."),

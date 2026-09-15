@@ -1970,7 +1970,8 @@ def inventory_submit(data):
 	_require_preparer()
 	doc = _inventory_doc(data)
 	doc.flags.ignore_permissions = True
-	doc.save(ignore_permissions=True)
+	# submit() saves as part of submitting. Saving first as well ran every check, and wrote
+	# the count, twice.
 	doc.submit()
 	return {
 		"name": doc.name,
