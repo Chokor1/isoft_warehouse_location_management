@@ -2123,55 +2123,68 @@ isoft_warehouse_location_management.App = class {
 
 	// ------------------------------------------------------------------ SETTINGS
 	// ------------------------------------------------------------------ LOCATION INVENTORY
-	// Counting a location, modelled on Odoo's Physical Inventory: the system quantity
-	// beside a counted quantity that starts blank, the difference worked out as it is
-	// typed, and only the lines actually counted posted. Blank means not counted yet,
-	// which is not zero — a sheet that treated them alike would write off every item the
-	// counter had simply not reached.
+	// A stocktake of a warehouse, taken location by location. An inventory is opened on a
+	// warehouse; each location is counted on a sheet and posted, and is then done. The
+	// inventory shows at a glance which locations are done, which are being counted, and
+	// which are still waiting.
+	//
+	// The sheet follows Odoo's Physical Inventory: the system quantity beside a counted
+	// quantity that starts blank, and the difference worked out as it is typed. Blank means
+	// not counted yet, which is not the same as zero.
 	render_inventory() {
 		const inv = this.inv;
-		// Unsaved counts survive a trip to another tab. Otherwise the section's own tab is the
-		// way home, back to the list of counts.
+		// unsaved counts survive a trip to another tab
 		if (inv && inv.open && inv.dirty && inv.rows) return this.paint_inventory_sheet();
 		this.inv = null;
+		if (this.invSession) return this.render_inventory_session();
+
 		const esc = frappe.utils.escape_html;
+		const can = this.ctx.is_preparer || this.ctx.can_manage;
 		this.$content.html(`
 			<div class="ip-toolbar">
-				<div class="ip-inv-intro ip-muted">${esc(__('Count what is physically on a location. The difference is posted as a Stock Reconciliation, valued at the rate the stock already carries.'))}</div>
-				<button class="ip-btn ip-btn-primary ip-inv-new"><i class="fa fa-plus"></i>${esc(__('New count'))}</button>
+				<div class="ip-inv-intro ip-muted">${esc(__('Take stock of a warehouse, location by location. Each location is counted and posted on its own, and the inventory shows which are done and which are still waiting.'))}</div>
+				${can ? `<button class="ip-btn ip-btn-primary ip-ws-new"><i class="fa fa-plus"></i>${esc(__('New inventory'))}</button>` : ''}
 			</div>
+			<div class="ip-ws-section-title">${esc(__('Inventories'))}</div>
+			<div class="ip-ws-home"><div class="ip-loading"><div class="ip-spin"></div></div></div>
+			<div class="ip-ws-section-title">${esc(__('Recent counts'))}</div>
 			<div class="ip-card"><div class="ip-inv-list"><div class="ip-loading"><div class="ip-spin"></div></div></div></div>`);
-		this.$content.find('.ip-inv-new').on('click', () => this.inventory_pick_location());
+		this.$content.find('.ip-ws-new').on('click', () => this.inventory_start_dialog());
 
-		this.api('inventory_list', { warehouse: this.scope }).then((rows) => {
-			const $list = this.$content.find('.ip-inv-list');
-			if (!rows || !rows.length) {
-				$list.html(`<div class="ip-empty-lg"><i class="fa fa-check-square-o"></i>${esc(__('No counts yet. Start one with New count.'))}</div>`);
-				return;
-			}
-			const status = (r) => r.docstatus === 1 ? ['posted', __('Posted')]
-				: r.docstatus === 2 ? ['cancelled', __('Cancelled')] : ['draft', __('Draft')];
-			$list.html(`<div class="ip-inv-tablewrap"><table class="ip-table"><thead><tr>
-					<th>${esc(__('Count'))}</th><th>${esc(__('Location'))}</th><th>${esc(__('Warehouse'))}</th>
-					<th>${esc(__('Date'))}</th><th class="ip-inv-num">${esc(__('Counted'))}</th>
-					<th class="ip-inv-num">${esc(__('Differences'))}</th><th class="ip-inv-num">${esc(__('Net units'))}</th>
-					<th>${esc(__('Status'))}</th></tr></thead><tbody>${rows.map((r) => {
-						const st = status(r);
-						return `<tr class="ip-inv-open" data-name="${esc(r.name)}">
-							<td><b>${esc(r.name)}</b></td>
-							<td>${esc(r.location_code || '')}</td>
-							<td class="ip-muted">${esc(r.warehouse || '')}</td>
-							<td>${esc(frappe.datetime.str_to_user(r.posting_date) || '')}</td>
-							<td class="ip-inv-num">${cint(r.counted_lines)}</td>
-							<td class="ip-inv-num">${cint(r.difference_lines)}</td>
-							<td class="ip-inv-num">${this.inventory_signed(r.net_difference)}</td>
-							<td><span class="ip-inv-status is-${st[0]}">${esc(st[1])}</span></td></tr>`;
-					}).join('')}</tbody></table></div>`);
-			$list.find('.ip-inv-open').on('click', (e) => {
-				this.inv = { open: true, name: $(e.currentTarget).data('name') };
-				this.render_inventory_sheet();
+		this.api('inventory_home', { warehouse: this.scope }).then((d) => {
+			const invs = (d && d.inventories) || [];
+			const $home = this.$content.find('.ip-ws-home');
+			$home.html(invs.length ? `<div class="ip-ws-grid">${invs.map((r) => {
+				const total = cint(r.locations_total);
+				const done = cint(r.locations_done);
+				const busy = cint(r.locations_in_progress);
+				const open = r.status === 'Open';
+				const when = open
+					? __('started {0}', [frappe.datetime.str_to_user(r.started_on)])
+					: __('completed {0}', [frappe.datetime.str_to_user(r.completed_on)]);
+				return `<button type="button" class="ip-ws-card" data-name="${esc(r.name)}">
+					<div class="ip-ws-card-top"><b>${esc(r.name)}</b>
+						<span class="ip-inv-status is-${open ? 'open' : 'completed'}">${esc(open ? __('Open') : __('Completed'))}</span></div>
+					<div class="ip-ws-card-wh">${esc(r.warehouse)}</div>
+					${this.inventory_bar(done, busy, total)}
+					<div class="ip-ws-card-meta">${esc(__('{0} of {1} locations done', [done, total]))}${
+						busy ? ' · ' + esc(__('{0} being counted', [busy])) : ''} · ${esc(when)}</div>
+				</button>`;
+			}).join('')}</div>`
+				: `<div class="ip-ws-empty">${esc(__('No inventory yet. Start one to take stock of a warehouse, location by location.'))}</div>`);
+			$home.find('.ip-ws-card').on('click', (e) => {
+				this.invSession = $(e.currentTarget).data('name');
+				this.render_inventory_session();
 			});
+			this.paint_inventory_counts(this.$content.find('.ip-inv-list'), (d && d.counts) || []);
 		});
+	}
+
+	inventory_bar(done, busy, total, big) {
+		const pct = (n) => (total ? Math.round((n / total) * 1000) / 10 : 0);
+		return `<div class="ip-ws-bar${big ? ' is-big' : ''}" role="img"
+			aria-label="${frappe.utils.escape_html(__('{0} of {1} done', [done, total]))}">
+			<span class="is-done" style="width:${pct(done)}%"></span><span class="is-progress" style="width:${pct(busy)}%"></span></div>`;
 	}
 
 	inventory_signed(v) {
@@ -2180,53 +2193,247 @@ isoft_warehouse_location_management.App = class {
 		return `<span class="${v > 0 ? 'ip-inv-plus' : 'ip-inv-minus'}">${v > 0 ? '+' : '−'}${format_number(Math.abs(v))}</span>`;
 	}
 
-	inventory_pick_location() {
+	paint_inventory_counts($list, rows) {
 		const esc = frappe.utils.escape_html;
-		this.api('inventory_locations', { warehouse: this.scope }).then((locs) => {
-			if (!locs || !locs.length) {
-				frappe.msgprint(__('There is no location to count here. Only active locations in enabled warehouses can be counted.'));
+		if (!rows.length) {
+			$list.html(`<div class="ip-empty-lg"><i class="fa fa-check-square-o"></i>${esc(__('No counts yet.'))}</div>`);
+			return;
+		}
+		const status = (r) => r.docstatus === 1 ? ['posted', __('Posted')]
+			: r.docstatus === 2 ? ['cancelled', __('Cancelled')] : ['draft', __('Draft')];
+		$list.html(`<div class="ip-inv-tablewrap"><table class="ip-table"><thead><tr>
+				<th>${esc(__('Count'))}</th><th>${esc(__('Location'))}</th><th>${esc(__('Warehouse'))}</th>
+				<th>${esc(__('Date'))}</th><th class="ip-inv-num">${esc(__('Counted'))}</th>
+				<th class="ip-inv-num">${esc(__('Differences'))}</th><th class="ip-inv-num">${esc(__('Net units'))}</th>
+				<th>${esc(__('Status'))}</th></tr></thead><tbody>${rows.map((r) => {
+					const st = status(r);
+					return `<tr class="ip-inv-open" data-name="${esc(r.name)}">
+						<td><b>${esc(r.name)}</b></td>
+						<td>${esc(r.location_code || '')}</td>
+						<td class="ip-muted">${esc(r.warehouse || '')}</td>
+						<td>${esc(frappe.datetime.str_to_user(r.posting_date) || '')}</td>
+						<td class="ip-inv-num">${cint(r.counted_lines)}</td>
+						<td class="ip-inv-num">${cint(r.difference_lines)}</td>
+						<td class="ip-inv-num">${this.inventory_signed(r.net_difference)}</td>
+						<td><span class="ip-inv-status is-${st[0]}">${esc(st[1])}</span></td></tr>`;
+				}).join('')}</tbody></table></div>`);
+		$list.find('.ip-inv-open').on('click', (e) => {
+			this.inv = { open: true, name: $(e.currentTarget).data('name') };
+			this.render_inventory_sheet();
+		});
+	}
+
+	inventory_start_dialog() {
+		const esc = frappe.utils.escape_html;
+		this.api('inventory_warehouses').then((whs) => {
+			whs = whs || [];
+			if (!whs.length) {
+				frappe.msgprint(__('There is no warehouse to take stock of here. A warehouse has to be enabled and have locations.'));
 				return;
 			}
 			const d = new frappe.ui.Dialog({
-				title: __('Which location are you counting?'),
-				fields: [
-					{ fieldtype: 'Data', fieldname: 'q', label: __('Find a location'), placeholder: __('Code, name or warehouse') },
-					{ fieldtype: 'HTML', fieldname: 'list' },
-				],
+				title: __('Take stock of which warehouse?'),
+				fields: [{ fieldtype: 'HTML', fieldname: 'list' }],
 			});
 			const $list = d.fields_dict.list.$wrapper;
-			const paint = (q) => {
-				q = (q || '').trim().toLowerCase();
-				const hits = locs.filter((l) => !q || [l.location_code, l.location_name, l.warehouse]
-					.some((v) => String(v || '').toLowerCase().indexOf(q) !== -1)).slice(0, 200);
-				$list.html(hits.length ? `<div class="ip-inv-pick">${hits.map((l) => `
-					<button type="button" class="ip-inv-pickrow" data-name="${esc(l.name)}">
-						<b>${esc(l.location_code)}</b>
-						<span class="ip-muted">${esc(l.warehouse)}</span>
-						<span class="ip-inv-pickmeta">${esc(__('{0} item(s)', [cint(l.items)]))}<br>${esc(l.last_counted
-							? __('last counted {0}', [frappe.datetime.str_to_user(l.last_counted)]) : __('never counted'))}</span>
-					</button>`).join('')}</div>`
-					: `<div class="ip-muted" style="padding:12px 2px">${esc(__('No location matches.'))}</div>`);
-			};
-			d.fields_dict.q.$input.on('input', (e) => paint(e.target.value));
+			$list.html(`<div class="ip-inv-pick">${whs.map((w) => `
+				<button type="button" class="ip-inv-pickrow" data-wh="${esc(w.warehouse)}" data-open="${esc(w.open_inventory || '')}">
+					<b>${esc(w.warehouse)}</b>
+					<span class="ip-inv-pickmeta">${esc(__('{0} location(s)', [cint(w.locations)]))}<br>${esc(w.open_inventory
+						? __('{0} is open — carry on with it', [w.open_inventory]) : __('no inventory open'))}</span>
+				</button>`).join('')}</div>`);
 			$list.on('click', '.ip-inv-pickrow', (e) => {
+				const $b = $(e.currentTarget);
+				const open = String($b.attr('data-open') || '');
+				const warehouse = $b.attr('data-wh');
+				// Close first, and once only. Bootstrap ignores hide() while the dialog is still
+				// animating open, so a quick click — or a quick answer — used to leave it stuck
+				// on screen over everything that came after. If it is mid-animation, it closes
+				// the moment the animation ends.
+				$list.find('.ip-inv-pickrow').prop('disabled', true);
+				d.$wrapper.one('shown.bs.modal', () => d.hide());
 				d.hide();
-				this.inv = { open: true, location: $(e.currentTarget).data('name') };
-				this.render_inventory_sheet();
+				if (open) {
+					this.invSession = open;
+					this.render_inventory_session();
+					return;
+				}
+				this.api('inventory_start', { warehouse: warehouse }).then((r) => {
+					frappe.show_alert({ message: __('{0} started', [r.name]), indicator: 'green' });
+					this.invSession = r.name;
+					this.render_inventory_session();
+				});
 			});
 			d.show();
-			paint('');
+		});
+	}
+
+	render_inventory_session() {
+		this.$content.html('<div class="ip-loading"><div class="ip-spin"></div></div>');
+		this.api('inventory_session', { name: this.invSession })
+			.then((s) => {
+				this.invSessionData = s;
+				this.paint_inventory_session();
+			})
+			.fail(() => {
+				this.invSession = null;
+				this.render_inventory();
+			});
+	}
+
+	paint_inventory_session() {
+		const esc = frappe.utils.escape_html;
+		const s = this.invSessionData;
+		const h = s.head;
+		const p = s.progress;
+		const open = h.status === 'Open';
+		const filter = this.invFilter || 'all';
+		const labels = { waiting: __('Waiting'), progress: __('Being counted'), done: __('Done') };
+		const icons = { waiting: 'fa-circle-o', progress: 'fa-pencil', done: 'fa-check-circle' };
+		const when = (v) => frappe.datetime.str_to_user(v) || '';
+
+		this.$content.html(`
+			<div class="ip-inv-head">
+				<button class="ip-btn ip-btn-light ip-ws-back"><i class="fa fa-arrow-left"></i>${esc(__('Inventories'))}</button>
+				<div class="ip-inv-title">
+					<div class="ip-inv-loc">${esc(h.warehouse)} <span class="ip-inv-status is-${open ? 'open' : 'completed'}">${esc(open ? __('Open') : __('Completed'))}</span></div>
+					<div class="ip-muted ip-inv-sub">${esc(h.name)} · ${esc(__('started {0} by {1}', [when(h.started_on), h.started_by || '']))}${
+						!open && h.completed_on ? ' · ' + esc(__('completed {0}', [when(h.completed_on)])) : ''}</div>
+				</div>
+				<div class="ip-inv-actions">
+					${s.can_manage && open ? `<button class="ip-btn ip-btn-primary ip-ws-complete"><i class="fa fa-flag-checkered"></i>${esc(__('Complete inventory'))}</button>` : ''}
+					${s.can_manage && !open ? `<button class="ip-btn ip-btn-light ip-ws-reopen"><i class="fa fa-undo"></i>${esc(__('Reopen'))}</button>` : ''}
+				</div>
+			</div>
+			<div class="ip-ws-progress">
+				${this.inventory_bar(p.done, p.in_progress, p.total, true)}
+				<div class="ip-ws-legend">
+					<span><span class="ip-ws-dot is-done"></span><b>${cint(p.done)}</b>${esc(__('done'))}</span>
+					<span><span class="ip-ws-dot is-progress"></span><b>${cint(p.in_progress)}</b>${esc(__('being counted'))}</span>
+					<span><span class="ip-ws-dot"></span><b>${cint(p.waiting)}</b>${esc(__('waiting'))}</span>
+					<span><b>${cint(p.total)}</b>${esc(__('locations'))}</span>
+					<span><b>${cint(p.difference_lines)}</b>${esc(__('lines with a difference'))}</span>
+				</div>
+			</div>
+			<div class="ip-toolbar">
+				<div class="ip-ws-chips">${[
+					['all', __('All'), p.total], ['waiting', __('Waiting'), p.waiting],
+					['progress', __('Being counted'), p.in_progress], ['done', __('Done'), p.done],
+				].map((c) => `<button type="button" class="ip-ws-chip${filter === c[0] ? ' on' : ''}" data-f="${c[0]}">${esc(c[1])}<span>${cint(c[2])}</span></button>`).join('')}</div>
+				<div class="ip-search"><i class="fa fa-search"></i>
+					<input class="ip-input ip-ws-search" placeholder="${esc(__('Find a location…'))}" value="${esc(this.invSearch || '')}"></div>
+			</div>
+			<div class="ip-ws-board"></div>`);
+
+		const $c = this.$content;
+		const $board = $c.find('.ip-ws-board');
+		const meta_of = (l) => {
+			if (l.state === 'done') {
+				let m = !l.counted_lines ? __('confirmed empty')
+					: (l.difference_lines ? __('{0} line(s) differ', [l.difference_lines]) : __('everything matched'));
+				if (l.counted_by) m += ' · ' + l.counted_by;
+				return m;
+			}
+			if (l.state === 'progress') return __('draft') + (l.counted_by ? ' · ' + l.counted_by : '');
+			return l.items ? __('{0} item(s) to count', [l.items]) : __('empty — confirm it');
+		};
+
+		const paint_board = () => {
+			const q = (this.invSearch || '').trim().toLowerCase();
+			const f = this.invFilter || 'all';
+			const rows = (s.locations || []).filter((l) => (f === 'all' || l.state === f)
+				&& (!q || [l.location_code, l.location_name, l.zone_label]
+					.some((v) => String(v || '').toLowerCase().indexOf(q) !== -1)));
+			if (!rows.length) {
+				$board.html(`<div class="ip-ws-nomatch">${esc(__('No location matches.'))}</div>`);
+				return;
+			}
+			// grouped by zone, keeping the order the locations arrive in
+			const groups = [];
+			const index = {};
+			rows.forEach((l) => {
+				const key = l.zone || '';
+				if (!(key in index)) {
+					index[key] = groups.length;
+					groups.push({ key: key, label: key ? (l.zone_label || key) : __('Not in a zone'), rows: [] });
+				}
+				groups[index[key]].rows.push(l);
+			});
+			groups.sort((a, b) => ((a.key ? 0 : 1) - (b.key ? 0 : 1))
+				|| String(a.label).localeCompare(String(b.label), undefined, { numeric: true }));
+			const titled = groups.length > 1 || !!groups[0].key;
+			$board.html(groups.map((g) => `
+				${titled ? `<div class="ip-ws-zone">${esc(g.label)} · ${g.rows.length}</div>` : ''}
+				<div class="ip-ws-locs">${g.rows.map((l) => `
+					<button type="button" class="ip-ws-loc is-${l.state}" data-location="${esc(l.location)}"${open || l.count ? '' : ' disabled'}>
+						<span class="ip-ws-loc-code">${esc(l.location_code)}</span>
+						<span class="ip-ws-loc-state"><i class="fa ${icons[l.state]}"></i> ${esc(labels[l.state])}</span>
+						<span class="ip-ws-loc-meta">${esc(meta_of(l))}</span>
+					</button>`).join('')}</div>`).join(''));
+		};
+		paint_board();
+
+		$c.find('.ip-ws-back').on('click', () => {
+			this.invSession = null;
+			this.invSessionData = null;
+			this.render_inventory();
+		});
+		$c.find('.ip-ws-chip').on('click', (e) => {
+			this.invFilter = String($(e.currentTarget).attr('data-f'));
+			$c.find('.ip-ws-chip').removeClass('on');
+			$(e.currentTarget).addClass('on');
+			paint_board();
+		});
+		let t;
+		$c.find('.ip-ws-search').on('input', (e) => {
+			this.invSearch = e.target.value;
+			clearTimeout(t);
+			t = setTimeout(paint_board, 120);
+		});
+		$board.on('click', '.ip-ws-loc', (e) => {
+			const loc = (s.locations || []).find((l) => l.location === String($(e.currentTarget).attr('data-location')));
+			if (!loc) return;
+			this.inv = loc.count
+				? { open: true, name: loc.count }
+				: { open: true, location: loc.location, inventory: h.name };
+			this.render_inventory_sheet();
+		});
+		$c.find('.ip-ws-complete').on('click', () => {
+			if (p.in_progress) {
+				frappe.msgprint(__('{0} location(s) are still being counted. Post or discard those counts before completing the inventory.', [p.in_progress]));
+				return;
+			}
+			const lines = [__('{0} of {1} locations are done.', [p.done, p.total])];
+			if (p.waiting) lines.push(__('{0} location(s) were never counted and stay exactly as they are.', [p.waiting]));
+			lines.push(__('A completed inventory takes no more counts until it is reopened.'));
+			frappe.confirm(lines.map((x) => `<p>${esc(x)}</p>`).join(''), () => {
+				this.api('inventory_complete', { name: h.name }).then((r) => {
+					frappe.show_alert({ message: __('{0} completed', [h.name]), indicator: 'green' });
+					this.invSessionData = r;
+					this.paint_inventory_session();
+				});
+			});
+		});
+		$c.find('.ip-ws-reopen').on('click', () => {
+			frappe.confirm(__('Reopen {0}? Its waiting locations can then be counted.', [h.name]), () => {
+				this.api('inventory_reopen', { name: h.name }).then((r) => {
+					this.invSessionData = r;
+					this.paint_inventory_session();
+				});
+			});
 		});
 	}
 
 	render_inventory_sheet() {
 		const inv = this.inv;
 		this.$content.html('<div class="ip-loading"><div class="ip-spin"></div></div>');
-		this.api('inventory_sheet', inv.name ? { name: inv.name } : { location: inv.location })
+		const args = inv.name ? { name: inv.name } : { location: inv.location, inventory: inv.inventory || '' };
+		this.api('inventory_sheet', args)
 			.then((s) => {
 				inv.head = s.head;
 				inv.rows = s.rows || [];
 				inv.name = s.head.name;
+				inv.inventory = s.head.inventory || inv.inventory || null;
 				inv.dirty = false;
 				this.paint_inventory_sheet();
 			})
@@ -2244,29 +2451,35 @@ isoft_warehouse_location_management.App = class {
 		const st = h.docstatus === 1 ? ['posted', __('Posted')]
 			: h.docstatus === 2 ? ['cancelled', __('Cancelled')] : ['draft', h.name ? __('Draft') : __('New')];
 		const link = (dt, dn) => frappe.utils.get_form_link(dt, dn, true);
+		const usable_count = () => inv.rows.filter((r) => !r.unsupported).length;
+		const post_label = () => (usable_count() ? __('Post count') : __('Confirm empty'));
 
 		this.$content.html(`
 			<div class="ip-inv-head">
-				<button class="ip-btn ip-btn-light ip-inv-back"><i class="fa fa-arrow-left"></i>${esc(__('Counts'))}</button>
+				<button class="ip-btn ip-btn-light ip-inv-back"><i class="fa fa-arrow-left"></i>${esc(h.inventory ? __('Inventory') : __('Counts'))}</button>
 				<div class="ip-inv-title">
 					<div class="ip-inv-loc">${esc(h.location_code)} <span class="ip-inv-status is-${st[0]}">${esc(st[1])}</span></div>
-					<div class="ip-muted ip-inv-sub">${esc(h.warehouse)}${h.name ? ' · ' + esc(h.name) : ''}</div>
+					<div class="ip-muted ip-inv-sub">${esc(h.warehouse)}${h.inventory ? ' · ' + esc(h.inventory) : ''}${h.name ? ' · ' + esc(h.name) : ''}</div>
 				</div>
 				<div class="ip-inv-actions">
 					${editable ? `
 						<button class="ip-btn ip-btn-light ip-inv-fill" title="${esc(__('Mark every uncounted line as matching the system'))}"><i class="fa fa-check-circle-o"></i>${esc(__('Uncounted match'))}</button>
 						<button class="ip-btn ip-btn-light ip-inv-save"><i class="fa fa-save"></i>${esc(__('Save draft'))}</button>
-						<button class="ip-btn ip-btn-primary ip-inv-post"><i class="fa fa-check"></i>${esc(__('Post count'))}</button>` : ''}
+						<button class="ip-btn ip-btn-primary ip-inv-post"><i class="fa fa-check"></i><span>${esc(post_label())}</span></button>` : ''}
 					${editable && h.name ? `<button class="ip-btn ip-btn-ghost ip-inv-discard"><i class="fa fa-trash"></i>${esc(__('Discard'))}</button>` : ''}
 					${h.docstatus === 1 ? `<button class="ip-btn ip-btn-ghost ip-inv-cancel"><i class="fa fa-undo"></i>${esc(__('Cancel count'))}</button>` : ''}
 				</div>
 			</div>
+			${editable && h.inventory_status === 'Completed' ? `<div class="ip-inv-note is-warn">${esc(__(
+				'{0} is completed, so this count cannot be posted until the inventory is reopened.', [h.inventory]))}</div>` : ''}
 			${editable && (h.other_drafts || []).length ? `<div class="ip-inv-note is-warn">${esc(__(
 				'This location is also being counted on {0}. Whichever is posted second is taken against the stock the first one left.',
 				[h.other_drafts.join(', ')]))}</div>` : ''}
 			${h.docstatus === 1 ? `<div class="ip-inv-note is-done">${h.stock_reconciliation
 				? __('Posted as {0}, with the location moved by {1}.', [link('Stock Reconciliation', h.stock_reconciliation), link('Location Stock Movement', h.location_movement)])
-				: esc(__('Posted. Everything counted matched the system, so nothing was adjusted.'))}</div>` : ''}
+				: esc(inv.rows.length
+					? __('Posted. Everything counted matched the system, so nothing was adjusted.')
+					: __('Posted: confirmed empty.'))}</div>` : ''}
 			${h.docstatus === 2 ? `<div class="ip-inv-note">${esc(__('Cancelled. Its reconciliation and movement were cancelled with it.'))}</div>` : ''}
 			<div class="ip-inv-summary"></div>
 			${editable ? `<div class="ip-search ip-inv-scan"><i class="fa fa-barcode"></i>
@@ -2342,9 +2555,11 @@ isoft_warehouse_location_management.App = class {
 
 		const paint_rows = () => {
 			if (!inv.rows.length) {
-				$tbody.html(`<tr><td colspan="5" class="ip-muted ip-inv-empty">${esc(editable
-					? __('Nothing is recorded on this location. Scan or type what you find to add it.')
-					: __('No lines.'))}</td></tr>`);
+				const empty = !editable ? __('Confirmed empty.')
+					: h.inventory
+						? __('Nothing is recorded on this location. If you find something, scan it to add it; otherwise confirm the location is empty.')
+						: __('Nothing is recorded on this location. Scan or type what you find to add it.');
+				$tbody.html(`<tr><td colspan="5" class="ip-muted ip-inv-empty">${esc(empty)}</td></tr>`);
 				return;
 			}
 			$tbody.html(inv.rows.map(row_html).join(''));
@@ -2368,8 +2583,7 @@ isoft_warehouse_location_management.App = class {
 		summarise();
 
 		// Leaving and cancelling apply to every sheet, posted or not, so they are bound before
-		// the return below that skips what only a draft can do. They were bound nowhere
-		// before, which left Counts dead on every sheet.
+		// the return below that skips what only a draft can do.
 		$c.find('.ip-inv-back').on('click', () => {
 			const leave = () => {
 				this.inv = null;
@@ -2472,6 +2686,7 @@ isoft_warehouse_location_management.App = class {
 				inv.dirty = true;
 				paint_rows();
 				summarise();
+				$c.find('.ip-inv-post span').text(post_label());
 				focus_row(inv.rows.length - 1);
 				frappe.show_alert({ message: __('{0} was not expected on this location — added to the count.', [row.item_code]), indicator: 'orange' });
 			});
@@ -2481,6 +2696,7 @@ isoft_warehouse_location_management.App = class {
 			data: JSON.stringify({
 				name: inv.name,
 				location: h.location,
+				inventory: h.inventory || inv.inventory || null,
 				rows: inv.rows.filter((r) => !r.unsupported).map((r) => ({
 					item_code: r.item_code,
 					is_counted: r.is_counted ? 1 : 0,
@@ -2499,7 +2715,11 @@ isoft_warehouse_location_management.App = class {
 				return;
 			}
 			frappe.confirm(__('Mark the {0} uncounted line(s) as matching the system? Only do this for items you have actually checked.', [open.length]), () => {
-				open.forEach((r) => { r.is_counted = 1; r.counted_qty = flt(r.system_qty); });
+				open.forEach((r) => {
+					r.system_qty = flt(r.current_qty);
+					r.is_counted = 1;
+					r.counted_qty = flt(r.system_qty);
+				});
 				inv.dirty = true;
 				paint_rows();
 				summarise();
@@ -2513,6 +2733,7 @@ isoft_warehouse_location_management.App = class {
 					inv.head = s.head;
 					inv.rows = s.rows || [];
 					inv.name = s.head.name;
+					inv.inventory = s.head.inventory || inv.inventory || null;
 					inv.dirty = false;
 					frappe.show_alert({ message: __('Draft saved'), indicator: 'green' });
 					this.paint_inventory_sheet();
@@ -2523,8 +2744,13 @@ isoft_warehouse_location_management.App = class {
 		$c.find('.ip-inv-post').on('click', () => {
 			const usable = inv.rows.filter((r) => !r.unsupported);
 			const counted = usable.filter((r) => r.is_counted);
-			if (!counted.length) {
+			const empty = !usable.length;
+			if (!empty && !counted.length) {
 				frappe.msgprint(__('Nothing has been counted yet. Enter a quantity on at least one line.'));
+				return;
+			}
+			if (!empty && h.inventory && counted.length < usable.length) {
+				frappe.msgprint(__('Count every line before marking {0} done — {1} still blank. Use Uncounted match for the lines that agree with the system.', [h.location_code, usable.length - counted.length]));
 				return;
 			}
 			const stale = counted.filter(moved_of);
@@ -2534,25 +2760,39 @@ isoft_warehouse_location_management.App = class {
 			}
 			const differ = counted.filter((r) => Math.abs(diff_of(r)) > 1e-9).length;
 			const left = usable.length - counted.length;
-			const message = [
-				__('{0} line(s) counted, {1} with a difference.', [counted.length, differ]),
-				differ
-					? __('A Stock Reconciliation will be created and submitted for the difference, valued at the rate the stock already carries.')
-					: __('Everything counted matches the system, so nothing will be adjusted.'),
-				left ? __('{0} line(s) not counted are left exactly as they are.', [left]) : '',
-			].filter(Boolean).map((t) => `<p>${esc(t)}</p>`).join('');
+			const message = empty
+				? `<p>${esc(h.inventory
+					? __('Nothing is on {0}. Confirm it is empty and mark it done?', [h.location_code])
+					: __('Nothing is on {0}. Confirm it is empty?', [h.location_code]))}</p>`
+				: [
+					__('{0} line(s) counted, {1} with a difference.', [counted.length, differ]),
+					differ
+						? __('A Stock Reconciliation will be created and submitted for the difference, valued at the rate the stock already carries.')
+						: __('Everything counted matches the system, so nothing will be adjusted.'),
+					left ? __('{0} line(s) not counted are left exactly as they are.', [left]) : '',
+				].filter(Boolean).map((x) => `<p>${esc(x)}</p>`).join('');
 			frappe.confirm(message, () => {
 				busy(true);
 				this.api('inventory_submit', payload())
 					.then((res) => {
+						if (h.inventory) {
+							// back to the stocktake, where this location now shows as done
+							frappe.show_alert({
+								message: __('{0} done', [h.location_code]) + (res.stock_reconciliation ? ' · ' + res.stock_reconciliation : ''),
+								indicator: 'green',
+							});
+							this.inv = null;
+							this.invSession = h.inventory;
+							this.render_inventory();
+							return;
+						}
 						frappe.show_alert({
 							message: res.stock_reconciliation
 								? __('Count posted as {0}', [res.stock_reconciliation])
 								: __('Count posted — nothing to adjust'),
 							indicator: 'green',
 						});
-						// The sheet already holds what was posted, so it is shown as posted
-						// straight away rather than fetched again.
+						// the sheet already holds what was posted, so it is shown without a fetch
 						inv.name = res.name;
 						inv.dirty = false;
 						inv.head = Object.assign({}, h, {

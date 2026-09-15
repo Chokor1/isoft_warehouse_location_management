@@ -1837,9 +1837,17 @@ def inventory_list(warehouse=None, limit=40):
 
 
 @frappe.whitelist()
-def inventory_sheet(location=None, name=None):
+def inventory_sheet(location=None, name=None, inventory=None):
 	"""A count sheet: an existing count, or a fresh one for a location."""
 	_require_access()
+	if not name and inventory and location:
+		# Inside a stocktake a location has one count: open it if it already exists.
+		name = frappe.db.get_value(
+			"Location Inventory",
+			{"inventory": inventory, "location": location, "docstatus": ("<", 2)},
+			"name",
+			order_by="docstatus desc, modified desc",
+		)
 	from isoft_warehouse_location_management.isoft_location_manager.api import natural_key
 	from isoft_warehouse_location_management.isoft_location_manager.doctype.location_stock.location_stock import (
 		get_balance,
@@ -1861,6 +1869,7 @@ def inventory_sheet(location=None, name=None):
 			rows.append(_inventory_row(r.item_code, base, r.item_name, r.is_counted, r.counted_qty, now))
 		head = {
 			"name": doc.name,
+			"inventory": doc.inventory,
 			"docstatus": doc.docstatus,
 			"remarks": doc.remarks,
 			"posting_date": doc.posting_date,
@@ -1878,7 +1887,7 @@ def inventory_sheet(location=None, name=None):
 		)
 		rows = [_inventory_row(s.item_code, s.qty, s.item_name) for s in stock]
 		rows.sort(key=lambda r: natural_key(r["item_code"]))
-		head = {"name": None, "docstatus": 0}
+		head = {"name": None, "docstatus": 0, "inventory": inventory or None}
 
 	head.update(
 		{
@@ -1893,6 +1902,11 @@ def inventory_sheet(location=None, name=None):
 			),
 		}
 	)
+	if head.get("inventory"):
+		inv = frappe.db.get_value("Warehouse Inventory", head["inventory"], ["warehouse", "status"], as_dict=True)
+		if not inv or inv.warehouse != loc.warehouse:
+			frappe.throw(_("{0} is not an inventory of {1}.").format(head["inventory"], loc.warehouse))
+		head["inventory_status"] = inv.status
 	return {"head": head, "rows": rows}
 
 
@@ -1929,6 +1943,7 @@ def _inventory_doc(data):
 		doc = frappe.new_doc("Location Inventory")
 		doc.location = loc.name
 		doc.warehouse = loc.warehouse
+		doc.inventory = data.inventory or None
 	# the sheet states what it showed the counter; the controller checks it again at posting
 	doc.flags.from_sheet = True
 	if "remarks" in data:
@@ -1977,6 +1992,7 @@ def inventory_submit(data):
 		"name": doc.name,
 		"stock_reconciliation": doc.stock_reconciliation,
 		"location_movement": doc.location_movement,
+		"inventory": doc.inventory,
 		"counted_lines": doc.counted_lines,
 		"difference_lines": doc.difference_lines,
 		"net_difference": doc.net_difference,
@@ -2006,3 +2022,137 @@ def inventory_discard(name):
 		frappe.throw(_("Only a draft can be discarded; cancel a posted count instead."))
 	frappe.delete_doc("Location Inventory", name, ignore_permissions=True)
 	return {"discarded": name}
+
+
+# ======================================================================
+# warehouse inventory — a stocktake, taken location by location
+# ======================================================================
+def _inventory_in_scope(name):
+	inv = frappe.db.get_value("Warehouse Inventory", name, ["name", "warehouse", "status"], as_dict=True)
+	if not inv:
+		frappe.throw(_("Inventory {0} does not exist.").format(name))
+	scope = _scope(None)
+	if scope is not None and inv.warehouse not in scope:
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	return inv
+
+
+@frappe.whitelist()
+def inventory_home(warehouse=None):
+	"""Stocktakes in scope, open ones first, and the most recent counts."""
+	_require_access()
+	from isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_inventory.warehouse_inventory import (
+		progress_counters,
+	)
+
+	scope = _scope(warehouse)
+	rows = frappe.get_all(
+		"Warehouse Inventory",
+		fields=["name", "warehouse", "status", "started_on", "started_by", "completed_on",
+		        "locations_total", "locations_done", "locations_in_progress", "difference_lines"],
+		order_by="modified desc",
+		limit_page_length=200,
+	)
+	if scope is not None:
+		rows = [r for r in rows if r.warehouse in scope]
+	for r in rows:
+		if r.status == "Open":
+			r.update(progress_counters(r.name))  # an open stocktake can move at any moment
+	rows.sort(key=lambda r: r.status != "Open")  # stable, so newest-first holds in each group
+	return {"inventories": rows[:60], "counts": inventory_list(warehouse)}
+
+
+@frappe.whitelist()
+def inventory_warehouses():
+	"""Warehouses a stocktake can be taken of, with the one already open on each."""
+	_require_access()
+	from isoft_warehouse_location_management.isoft_location_manager.api import enabled_warehouse_set, natural_key
+
+	scope = _scope(None)
+	enabled = enabled_warehouse_set()
+	open_on = {
+		r.warehouse: r.name
+		for r in frappe.get_all("Warehouse Inventory", filters={"status": "Open"}, fields=["name", "warehouse"])
+	}
+	out = []
+	for r in frappe.db.sql(
+		"""select wl.warehouse, count(*) as locations from `tabWarehouse Location` wl
+		   join `tabWarehouse` w on w.name = wl.warehouse and w.is_group = 0
+		   where wl.is_active = 1 and wl.is_unassigned = 0 group by wl.warehouse""",
+		as_dict=True,
+	):
+		if (scope is not None and r.warehouse not in scope) or (enabled is not None and r.warehouse not in enabled):
+			continue
+		out.append({"warehouse": r.warehouse, "locations": cint(r.locations), "open_inventory": open_on.get(r.warehouse)})
+	return sorted(out, key=lambda x: natural_key(x["warehouse"]))
+
+
+@frappe.whitelist()
+def inventory_start(warehouse):
+	"""Open a stocktake on a warehouse. All of its locations start out waiting."""
+	_require_preparer()
+	from isoft_warehouse_location_management.isoft_location_manager.api import is_warehouse_enabled
+
+	# Name what is actually wrong with the warehouse before the scope check, which would
+	# otherwise answer a group or a disabled warehouse with a bare "not permitted".
+	wh = frappe.db.get_value("Warehouse", warehouse, ["name", "is_group"], as_dict=True)
+	if not wh:
+		frappe.throw(_("Warehouse {0} does not exist.").format(warehouse))
+	if wh.is_group:
+		frappe.throw(_("{0} is a group. Take stock of the warehouses under it, one at a time.").format(warehouse))
+	if not is_warehouse_enabled(warehouse):
+		frappe.throw(_("{0} is not enabled in Isoft Location Manager.").format(warehouse))
+	scope = _scope(None)
+	if scope is not None and warehouse not in scope:
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	doc = frappe.get_doc({"doctype": "Warehouse Inventory", "warehouse": warehouse})
+	doc.flags.ignore_permissions = True
+	doc.insert(ignore_permissions=True)
+	doc.refresh_progress()
+	return {"name": doc.name}
+
+
+@frappe.whitelist()
+def inventory_session(name):
+	"""One stocktake: its header, and every location with where it stands."""
+	_require_access()
+	from isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_inventory.warehouse_inventory import (
+		progress,
+	)
+
+	_inventory_in_scope(name)
+	doc = frappe.get_doc("Warehouse Inventory", name)
+	p = progress(name, with_locations=True)
+	return {
+		"head": {
+			"name": doc.name,
+			"warehouse": doc.warehouse,
+			"status": doc.status,
+			"started_on": doc.started_on,
+			"started_by": doc.started_by,
+			"completed_on": doc.completed_on,
+			"completed_by": doc.completed_by,
+			"remarks": doc.remarks,
+		},
+		"progress": {k: p[k] for k in ("total", "done", "in_progress", "waiting", "difference_lines")},
+		"locations": p["locations"],
+		"can_manage": 1 if {"Location Manager", "System Manager"} & _roles() else 0,
+	}
+
+
+@frappe.whitelist()
+def inventory_complete(name):
+	"""Close a stocktake. Counts still in progress have to be posted or discarded first."""
+	_require_preparer()
+	_inventory_in_scope(name)
+	frappe.get_doc("Warehouse Inventory", name).complete()
+	return inventory_session(name)
+
+
+@frappe.whitelist()
+def inventory_reopen(name):
+	"""Take a completed stocktake back up, unless another is open on the warehouse by now."""
+	_require_preparer()
+	_inventory_in_scope(name)
+	frappe.get_doc("Warehouse Inventory", name).reopen()
+	return inventory_session(name)

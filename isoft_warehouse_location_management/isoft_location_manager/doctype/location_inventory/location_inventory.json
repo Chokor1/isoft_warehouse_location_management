@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "naming_series",
+  "inventory",
   "warehouse",
   "location",
   "location_code",
@@ -29,38 +30,197 @@
   "amended_from"
  ],
  "fields": [
-  {"default": "LI-.YYYY.-", "fieldname": "naming_series", "fieldtype": "Select", "label": "Series", "no_copy": 1, "options": "LI-.YYYY.-", "print_hide": 1, "reqd": 1, "set_only_once": 1},
-  {"fieldname": "warehouse", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Warehouse", "options": "Warehouse", "reqd": 1},
-  {"fieldname": "location", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Location", "options": "Warehouse Location", "reqd": 1},
-  {"fetch_from": "location.location_code", "fieldname": "location_code", "fieldtype": "Data", "label": "Location Code", "read_only": 1},
-  {"fieldname": "company", "fieldtype": "Link", "label": "Company", "options": "Company", "read_only": 1},
-  {"fieldname": "column_break_1", "fieldtype": "Column Break"},
-  {"default": "Today", "description": "Set when the count is posted: the difference is always taken against the stock as it is at that moment.", "fieldname": "posting_date", "fieldtype": "Date", "in_list_view": 1, "label": "Posting Date", "read_only": 1},
-  {"fieldname": "posting_time", "fieldtype": "Time", "label": "Posting Time", "read_only": 1},
-  {"default": "__user", "fieldname": "counted_by", "fieldtype": "Link", "label": "Counted By", "options": "User"},
-  {"fieldname": "items_section", "fieldtype": "Section Break", "label": "Count"},
-  {"fieldname": "items", "fieldtype": "Table", "label": "Items", "options": "Location Inventory Item"},
-  {"fieldname": "summary_section", "fieldtype": "Section Break", "label": "Result"},
-  {"fieldname": "counted_lines", "fieldtype": "Int", "label": "Lines Counted", "read_only": 1},
-  {"fieldname": "difference_lines", "fieldtype": "Int", "label": "Lines With a Difference", "read_only": 1},
-  {"fieldname": "column_break_2", "fieldtype": "Column Break"},
-  {"fieldname": "net_difference", "fieldtype": "Float", "label": "Net Difference (units)", "read_only": 1},
-  {"fieldname": "stock_reconciliation", "fieldtype": "Link", "label": "Stock Reconciliation", "no_copy": 1, "options": "Stock Reconciliation", "read_only": 1},
-  {"fieldname": "location_movement", "fieldtype": "Link", "label": "Location Movement", "no_copy": 1, "options": "Location Stock Movement", "read_only": 1},
-  {"collapsible": 1, "fieldname": "remarks_section", "fieldtype": "Section Break", "label": "Remarks"},
-  {"fieldname": "remarks", "fieldtype": "Small Text", "label": "Remarks"},
-  {"fieldname": "amended_from", "fieldtype": "Link", "label": "Amended From", "no_copy": 1, "options": "Location Inventory", "print_hide": 1, "read_only": 1}
+  {
+   "default": "LI-.YYYY.-",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "no_copy": 1,
+   "options": "LI-.YYYY.-",
+   "print_hide": 1,
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "description": "The stocktake this count belongs to. A location is counted once in each.",
+   "fieldname": "inventory",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Inventory",
+   "options": "Warehouse Inventory",
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "reqd": 1
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Location",
+   "options": "Warehouse Location",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "location.location_code",
+   "fieldname": "location_code",
+   "fieldtype": "Data",
+   "label": "Location Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Today",
+   "description": "Set when the count is posted: the difference is always taken against the stock as it is at that moment.",
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Posting Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "posting_time",
+   "fieldtype": "Time",
+   "label": "Posting Time",
+   "read_only": 1
+  },
+  {
+   "default": "__user",
+   "fieldname": "counted_by",
+   "fieldtype": "Link",
+   "label": "Counted By",
+   "options": "User"
+  },
+  {
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Count"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Location Inventory Item"
+  },
+  {
+   "fieldname": "summary_section",
+   "fieldtype": "Section Break",
+   "label": "Result"
+  },
+  {
+   "fieldname": "counted_lines",
+   "fieldtype": "Int",
+   "label": "Lines Counted",
+   "read_only": 1
+  },
+  {
+   "fieldname": "difference_lines",
+   "fieldtype": "Int",
+   "label": "Lines With a Difference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "net_difference",
+   "fieldtype": "Float",
+   "label": "Net Difference (units)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_reconciliation",
+   "fieldtype": "Link",
+   "label": "Stock Reconciliation",
+   "no_copy": 1,
+   "options": "Stock Reconciliation",
+   "read_only": 1
+  },
+  {
+   "fieldname": "location_movement",
+   "fieldtype": "Link",
+   "label": "Location Movement",
+   "no_copy": 1,
+   "options": "Location Stock Movement",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "remarks_section",
+   "fieldtype": "Section Break",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Location Inventory",
+   "print_hide": 1,
+   "read_only": 1
+  }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-14 09:00:00.000000",
+ "modified": "2026-09-15 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Isoft Location Manager",
  "name": "Location Inventory",
  "owner": "Administrator",
  "permissions": [
-  {"amend": 1, "cancel": 1, "create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "submit": 1, "write": 1},
-  {"amend": 1, "cancel": 1, "create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "Location Manager", "share": 1, "submit": 1, "write": 1}
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Location Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
  ],
  "sort_field": "modified",
  "sort_order": "DESC",

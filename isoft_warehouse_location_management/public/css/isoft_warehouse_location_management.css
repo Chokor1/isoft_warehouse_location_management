@@ -796,3 +796,60 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 @media (max-width:700px){
   .ip-inv-table th.ip-inv-num,.ip-inv-table td.ip-inv-num{width:104px}
 }
+
+/* ================= warehouse inventory (a stocktake, location by location) ================= */
+/* Done is green, being counted amber, waiting neutral — the same three states on the
+   inventory cards, the progress bar and every location tile. */
+.ip-ws-section-title{margin:4px 0 10px;font-size:13px;font-weight:700;color:var(--ip-text)}
+.ip-ws-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px;margin-bottom:20px}
+.ip-ws-card{display:flex;flex-direction:column;gap:8px;width:100%;padding:14px 16px;border-radius:10px;cursor:pointer;
+  text-align:left;color:var(--ip-text);background:var(--ip-card);border:1px solid var(--ip-line);
+  transition:border-color .15s,box-shadow .15s}
+.ip-ws-card:hover{border-color:var(--ip-primary);box-shadow:0 4px 14px rgba(15,23,42,.08)}
+.ip-ws-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ip-ws-card-top b{font-size:14px}
+.ip-ws-card-wh{font-size:13px;font-weight:600}
+.ip-ws-card-meta{font-size:12px;color:var(--ip-muted)}
+.ip-ws-empty{padding:26px 18px;margin-bottom:20px;text-align:center;border-radius:10px;color:var(--ip-muted);
+  background:var(--ip-card);border:1px dashed var(--ip-border-strong)}
+
+.ip-inv-status.is-open{color:var(--ip-primary);background:rgba(37,99,235,.08);border-color:rgba(37,99,235,.30)}
+.ip-inv-status.is-completed{color:var(--ip-ok-text);background:var(--ip-ok-bg);border-color:var(--ip-ok-border)}
+
+.ip-ws-bar{display:flex;height:8px;border-radius:8px;overflow:hidden;background:var(--ip-subtle);border:1px solid var(--ip-line)}
+.ip-ws-bar.is-big{height:12px}
+.ip-ws-bar .is-done{background:#10b981}
+.ip-ws-bar .is-progress{background:#f59e0b}
+
+.ip-ws-progress{margin-bottom:14px;padding:14px 16px;border-radius:10px;background:var(--ip-card);border:1px solid var(--ip-line)}
+.ip-ws-legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:10px;font-size:12.5px;color:var(--ip-muted)}
+.ip-ws-legend b{margin-right:4px;font-size:15px;color:var(--ip-text);font-variant-numeric:tabular-nums}
+.ip-ws-dot{display:inline-block;width:9px;height:9px;margin-right:6px;border-radius:50%;vertical-align:middle;background:var(--ip-border-strong)}
+.ip-ws-dot.is-done{background:#10b981}
+.ip-ws-dot.is-progress{background:#f59e0b}
+
+.ip-ws-chips{display:flex;gap:6px;flex-wrap:wrap}
+.ip-ws-chip{padding:6px 12px;border-radius:20px;font-size:12.5px;font-weight:600;cursor:pointer;
+  color:var(--ip-muted);background:var(--ip-card);border:1px solid var(--ip-line)}
+.ip-ws-chip:hover{color:var(--ip-text);border-color:var(--ip-border-strong)}
+.ip-ws-chip.on{color:#fff;background:var(--ip-primary);border-color:var(--ip-primary)}
+.ip-ws-chip span{margin-left:5px;opacity:.8;font-variant-numeric:tabular-nums}
+
+.ip-ws-zone{margin:16px 0 8px;font-size:11.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ip-muted)}
+.ip-ws-zone:first-child{margin-top:2px}
+.ip-ws-locs{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.ip-ws-loc{display:flex;flex-direction:column;gap:4px;width:100%;padding:11px 13px;border-radius:9px;cursor:pointer;
+  text-align:left;color:var(--ip-text);background:var(--ip-card);border:1px solid var(--ip-line);border-left-width:4px;
+  transition:box-shadow .15s,transform .12s}
+.ip-ws-loc:hover{box-shadow:0 3px 12px rgba(15,23,42,.10);transform:translateY(-1px)}
+.ip-ws-loc.is-waiting{border-left-color:var(--ip-border-strong)}
+.ip-ws-loc.is-progress{border-left-color:#f59e0b}
+.ip-ws-loc.is-done{border-left-color:#10b981;background:var(--ip-ok-bg)}
+.ip-ws-loc:disabled{cursor:default;transform:none;box-shadow:none}
+.ip-ws-loc-code{font-size:13.5px;font-weight:700}
+.ip-ws-loc-state{font-size:12px;font-weight:600}
+.ip-ws-loc.is-waiting .ip-ws-loc-state{color:var(--ip-muted)}
+.ip-ws-loc.is-progress .ip-ws-loc-state{color:var(--ip-warn-text)}
+.ip-ws-loc.is-done .ip-ws-loc-state{color:var(--ip-ok-text)}
+.ip-ws-loc-meta{font-size:11.5px;line-height:1.4;color:var(--ip-muted)}
+.ip-ws-nomatch{padding:22px 10px;text-align:center;color:var(--ip-muted)}

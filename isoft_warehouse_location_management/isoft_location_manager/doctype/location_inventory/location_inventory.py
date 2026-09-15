@@ -40,6 +40,7 @@ class LocationInventory(Document):
 		if self.docstatus == 0:
 			require_enabled(_("count a location"))
 		self._check_location()
+		self._check_inventory()
 		self._refresh_rows()
 		self._summarise()
 		if self.docstatus == 0 and self.is_new():
@@ -53,11 +54,33 @@ class LocationInventory(Document):
 		self.posting_time = nowtime()
 		# validate has just refreshed the rows and the summary in this same pass, so they are
 		# not read again here; the moved-stock check below reads the balances itself.
+		if self.inventory:
+			# Inside a stocktake a location is done only when every line on it was counted.
+			# A blank left behind would be marked done without anyone having looked at it.
+			blank = [r.item_code for r in self.items if not cint(r.is_counted)]
+			if blank:
+				frappe.throw(
+					_("Count every line before marking {0} done. Still blank: {1}. Use Uncounted "
+					  "match for the lines that agree with the system.").format(
+						self.location_code, ", ".join(blank[:8]) + (" …" if len(blank) > 8 else "")
+					),
+					title=_("Lines Not Counted"),
+				)
 		if not self.counted_lines:
-			frappe.throw(
-				_("Nothing has been counted yet. Enter a quantity on at least one line."),
-				title=_("Nothing Counted"),
-			)
+			# An empty location has nothing to count, and confirming that it is empty is a
+			# count too — but only while it really holds nothing a sheet could show.
+			holds = frappe.db.sql(
+				"""select count(*) from `tabLocation Stock` ls
+				   join `tabItem` i on i.name = ls.item_code
+				   where ls.location = %s and ls.qty > 0
+				     and i.is_stock_item = 1 and i.has_serial_no = 0 and i.has_batch_no = 0""",
+				(self.location,),
+			)[0][0]
+			if self.items or holds:
+				frappe.throw(
+					_("Nothing has been counted yet. Enter a quantity on at least one line."),
+					title=_("Nothing Counted"),
+				)
 
 		# Refuse rather than guess. A line whose stock moved after it was counted cannot be
 		# posted honestly either way: against the old quantity it undoes the movement, and
@@ -94,6 +117,24 @@ class LocationInventory(Document):
 				self.location_code, self.counted_lines, self.difference_lines
 			),
 		)
+		self._touch_inventory()
+
+	def before_cancel(self):
+		# A completed stocktake is a record. Undoing one of its counts reopens that question,
+		# so it has to be reopened deliberately first.
+		if self.inventory and frappe.db.get_value("Warehouse Inventory", self.inventory, "status") == "Completed":
+			frappe.throw(
+				_("{0} belongs to {1}, which is completed. Reopen the inventory to cancel its counts.").format(
+					self.name, self.inventory
+				),
+				title=_("Inventory Completed"),
+			)
+
+	def after_insert(self):
+		self._touch_inventory()  # a draft makes its location "being counted"
+
+	def after_delete(self):
+		self._touch_inventory()  # a discarded draft puts it back to waiting
 
 	def on_cancel(self):
 		# Undone in reverse. Both are cancelled here, before Frappe looks for submitted
@@ -112,10 +153,55 @@ class LocationInventory(Document):
 			"Movement", "Cancelled count", self.name, warehouse=self.warehouse,
 			reference_type="Location Inventory",
 		)
+		self._touch_inventory()
 
 	# ------------------------------------------------------------------
 	# checks
 	# ------------------------------------------------------------------
+	def _check_inventory(self):
+		if not self.inventory:
+			return
+		inv = frappe.db.get_value("Warehouse Inventory", self.inventory, ["warehouse", "status"], as_dict=True)
+		if not inv:
+			frappe.throw(_("Inventory {0} does not exist.").format(self.inventory))
+		if inv.warehouse != self.warehouse:
+			frappe.throw(
+				_("{0} takes stock of {1}, but {2} is in {3}.").format(
+					self.inventory, inv.warehouse, self.location_code, self.warehouse
+				)
+			)
+		if inv.status != "Open":
+			frappe.throw(
+				_("{0} is completed. Reopen it to count more locations.").format(self.inventory),
+				title=_("Inventory Completed"),
+			)
+		# One count per location per stocktake, or "done" would mean two different things.
+		other = frappe.db.get_value(
+			"Location Inventory",
+			{"inventory": self.inventory, "location": self.location, "docstatus": ("<", 2),
+			 "name": ("!=", self.name or "")},
+			["name", "docstatus"],
+			as_dict=True,
+		)
+		if other and other.docstatus == 1:
+			frappe.throw(
+				_("{0} is already counted in {1} ({2}). Cancel that count to count it again.").format(
+					self.location_code, self.inventory, other.name
+				),
+				title=_("Already Counted"),
+			)
+		if other:
+			frappe.throw(
+				_("{0} is already being counted in {1} ({2}). Carry on with that count.").format(
+					self.location_code, self.inventory, other.name
+				),
+				title=_("Already Being Counted"),
+			)
+
+	def _touch_inventory(self):
+		if self.inventory and frappe.db.exists("Warehouse Inventory", self.inventory):
+			frappe.get_doc("Warehouse Inventory", self.inventory).refresh_progress()
+
 	def _check_location(self):
 		if not self.location:
 			frappe.throw(_("Choose the location being counted."))
