@@ -77,6 +77,7 @@ doc_events = {
 	# Every leaf warehouse owns an Unassigned Stock location from the moment it exists.
 	"Warehouse": {
 		"after_insert": "isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_location.warehouse_location.on_warehouse_insert",
+		"on_trash": "isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_location.warehouse_location.on_warehouse_trash",
 	},
 }
 

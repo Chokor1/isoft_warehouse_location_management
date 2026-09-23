@@ -15,6 +15,7 @@ import re
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import flt
 
 UNASSIGNED_CODE = "UNASSIGNED"
 UNASSIGNED_LABEL = "Unassigned Stock"
@@ -55,10 +56,13 @@ class WarehouseLocation(Document):
 		self._validate_zone()
 
 	def on_trash(self):
-		if self.is_unassigned:
+		# The unassigned location is made with its warehouse and goes with it. On its own it
+		# cannot be deleted: the ledger measures unassigned stock against it.
+		if self.is_unassigned and frappe.flags.get("ip_deleting_warehouse") != self.warehouse:
 			frappe.throw(
-				_("{0} is a system location and cannot be deleted. Deactivate the warehouse instead.").format(
-					self.name
+				_("{0} is the system location of {1}: it is created with the warehouse and is "
+				  "deleted with it. Deactivate the warehouse, or delete the warehouse itself.").format(
+					self.name, self.warehouse
 				)
 			)
 		if frappe.db.exists("Location Stock", {"location": self.name, "qty": [">", 0]}):
@@ -219,6 +223,75 @@ def ensure_all_unassigned_locations(warehouses=None):
 		if not frappe.db.get_value("Warehouse Location", {"warehouse": wh, "is_unassigned": 1}, "name"):
 			created.append(ensure_unassigned_location(wh))
 	return created
+
+
+def on_warehouse_trash(doc, method=None):
+	"""Clear this app's own records out of the way when a warehouse is deleted.
+
+	Every warehouse is given an unassigned location the moment it is created, and that
+	location links straight back to it. Without this the app made every warehouse
+	undeletable from the day it was made — including one that never held anything.
+
+	Only what is derived from the warehouse goes with it: its locations, its zones, its
+	rows in the settings, and its activity log. Anything that records something that
+	happened — stock sitting on a location, a movement, a count, a stocktake — stops the
+	deletion and is named, because deleting the warehouse must not quietly delete the
+	history of what went through it.
+	"""
+	warehouse = doc.name
+
+	for doctype, label in (
+		("Location Stock Movement", _("location movement")),
+		("Location Inventory", _("location count")),
+		("Warehouse Inventory", _("stocktake")),
+	):
+		names = frappe.get_all(doctype, filters={"warehouse": warehouse}, pluck="name", limit=4)
+		if names:
+			frappe.throw(
+				_("{0} has {1} {2}(s) recorded against it, such as {3}. They are the record of what "
+				  "happened there, so they do not go with the warehouse. Deactivate it instead, or "
+				  "remove those first.").format(
+					warehouse, frappe.db.count(doctype, {"warehouse": warehouse}), label, ", ".join(names)
+				),
+				title=_("Warehouse Has History"),
+			)
+
+	held = frappe.db.sql(
+		"""select ls.item_code, ls.qty, wl.location_code
+		   from `tabLocation Stock` ls
+		   join `tabWarehouse Location` wl on wl.name = ls.location
+		   where ls.warehouse = %s and ls.qty != 0
+		   order by abs(ls.qty) desc limit 5""",
+		(warehouse,),
+	)
+	if held:
+		frappe.throw(
+			_("{0} still has stock on its locations: {1}. Take it off them first.").format(
+				warehouse, "; ".join("%s on %s (%s)" % (i, c, flt(q)) for i, q, c in held)
+			),
+			title=_("Locations Still Hold Stock"),
+		)
+
+	# Derived rows go first, so nothing is left pointing at a location about to be removed.
+	for table in ("Location Stock", "Item Default Location", "Picking Warehouse", "Picking Log"):
+		frappe.db.sql("delete from `tab{0}` where warehouse = %s".format(table), (warehouse,))
+
+	if frappe.db.get_single_value("Picking Settings", "default_warehouse") == warehouse:
+		frappe.db.set_value("Picking Settings", "Picking Settings", "default_warehouse", None)
+
+	for zone in frappe.get_all("Warehouse Zone", filters={"warehouse": warehouse}, pluck="name"):
+		frappe.delete_doc("Warehouse Zone", zone, ignore_permissions=True)
+
+	# The flag is what lets the system location go: only while its own warehouse is going.
+	frappe.flags.ip_deleting_warehouse = warehouse
+	try:
+		for loc in frappe.get_all(
+			"Warehouse Location", filters={"warehouse": warehouse},
+			fields=["name", "is_unassigned"], order_by="is_unassigned asc",
+		):
+			frappe.delete_doc("Warehouse Location", loc.name, ignore_permissions=True)
+	finally:
+		frappe.flags.ip_deleting_warehouse = None
 
 
 def on_warehouse_insert(doc, method=None):
