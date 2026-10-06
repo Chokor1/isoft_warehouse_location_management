@@ -17,7 +17,7 @@ from frappe import _
 from frappe.utils import flt
 
 from isoft_warehouse_location_management.isoft_location_manager import location_allocation as alloc
-from isoft_warehouse_location_management.isoft_location_manager.api import is_enabled, is_warehouse_enabled
+from isoft_warehouse_location_management.isoft_location_manager.api import is_enabled, is_stock_item, is_warehouse_enabled
 from isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_location.warehouse_location import (
 	unassigned_location_names,
 )
@@ -57,6 +57,12 @@ def _drop_stale_locations(doc):
 	location from another warehouse as a preference.
 	"""
 	for row in doc.items:
+		# A service has no location by definition, so anything a copied row brought with it
+		# is stale on sight.
+		if not is_stock_item(row.get("item_code")):
+			row.set(LOCATION_FIELD, None)
+			row.set(alloc.ALLOCATION_FIELD, None)
+			continue
 		location = row.get(LOCATION_FIELD)
 		if not location:
 			continue
@@ -145,6 +151,11 @@ def resolve_row_locations(doc, persist=False, check_stock=True):
 	# line may claim — two lines of the same item must not both promise the same shelf.
 	claimed = {}
 	for row in doc.items:
+		# Nothing to settle for something that was never on a shelf.
+		if not is_stock_item(row.get("item_code")):
+			row.set(LOCATION_FIELD, None)
+			row.set(alloc.ALLOCATION_FIELD, None)
+			continue
 		# a settled row already says everything — but only while it still adds up
 		if not row.warehouse:
 			continue

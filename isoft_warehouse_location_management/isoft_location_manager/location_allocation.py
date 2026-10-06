@@ -286,11 +286,20 @@ def require_settled(row, warehouse, idx=None, direction="out"):
 	Stock coming *in* is different: a line nobody put away is simply unassigned stock,
 	which is a true and useful answer.
 	"""
-	from isoft_warehouse_location_management.isoft_location_manager.api import is_warehouse_enabled, setting
+	from isoft_warehouse_location_management.isoft_location_manager.api import (
+		is_stock_item,
+		is_warehouse_enabled,
+		setting,
+	)
 
 	if direction != "out" or not setting("require_location_on_out"):
 		return
 	if not warehouse or not is_warehouse_enabled(warehouse):
+		return
+	# A service, a fee, a delivery charge: never on a shelf, so there is nothing to trace
+	# and nothing to refuse. Without this, selling one asked where in the warehouse it
+	# came from, found nothing anywhere, and stopped the sale.
+	if not is_stock_item(row.get("item_code")):
 		return
 	qty = abs(row_qty(row))
 	if qty <= TOL:

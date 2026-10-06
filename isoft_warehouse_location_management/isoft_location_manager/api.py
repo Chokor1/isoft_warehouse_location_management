@@ -169,6 +169,16 @@ def sort_zones(rows):
 	))
 
 
+def is_stock_item(item_code):
+	"""Only a stock item can be on a location. A service never sat on a shelf.
+
+	Asked on every outgoing line, so it is read from the cached Item rather than queried.
+	"""
+	if not item_code:
+		return False
+	return bool(frappe.get_cached_value("Item", item_code, "is_stock_item"))
+
+
 def is_warehouse_enabled(warehouse):
 	if not warehouse:
 		return False

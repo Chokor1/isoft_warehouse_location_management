@@ -18,7 +18,12 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-from isoft_warehouse_location_management.isoft_location_manager.api import is_enabled, natural_key, setting
+from isoft_warehouse_location_management.isoft_location_manager.api import (
+	is_enabled,
+	is_stock_item,
+	natural_key,
+	setting,
+)
 from isoft_warehouse_location_management.isoft_location_manager.doctype.location_stock.location_stock import (
 	bin_quantities,
 	location_balances,
@@ -47,6 +52,12 @@ def resolve(warehouse, items, direction="out", qty_by_item=None):
 	"""
 	codes = _as_list(items)
 	if not warehouse or not codes or not is_enabled():
+		return {}
+
+	# Only stock items have locations at all, so the rest are not resolved, suggested or
+	# asked about anywhere this answer is used.
+	codes = [c for c in codes if is_stock_item(c)]
+	if not codes:
 		return {}
 
 	qty_map = frappe.parse_json(qty_by_item) if isinstance(qty_by_item, str) else (qty_by_item or {})

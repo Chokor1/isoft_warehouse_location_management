@@ -17,7 +17,11 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
-from isoft_warehouse_location_management.isoft_location_manager.api import is_enabled, is_warehouse_enabled
+from isoft_warehouse_location_management.isoft_location_manager.api import (
+	is_enabled,
+	is_stock_item,
+	is_warehouse_enabled,
+)
 
 MAX_ITEMS = 2000
 
@@ -42,6 +46,9 @@ def get_item_location_options(warehouse, item_code, qty=0, preferred=None):
 	# that warehouse is deliberately not tracked. Every other integration already checks
 	# this; the POS path was the one that did not.
 	if not is_enabled("pos") or not warehouse or not item_code:
+		return {"enabled": 0, "default": None, "options": []}
+	# a service line has no location to show, so the till is told there is nothing here
+	if not is_stock_item(item_code):
 		return {"enabled": 0, "default": None, "options": []}
 	if not is_warehouse_enabled(warehouse):
 		return {"enabled": 0, "default": None, "options": []}
