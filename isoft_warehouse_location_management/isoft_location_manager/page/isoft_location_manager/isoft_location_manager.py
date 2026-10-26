@@ -389,6 +389,10 @@ def get_unassigned(warehouse=None, search=None, start=0, limit=60, counts_only=0
 	has_more = len(rows) > limit
 	rows = rows[:limit]
 
+	barcodes = _barcodes_for([r["item_code"] for r in rows])
+	for r in rows:
+		r["barcode"] = barcodes.get(r["item_code"])
+
 	return {
 		"items": rows,
 		"start": start,
@@ -924,6 +928,24 @@ def clear_drift(warehouse, item_code):
 # ======================================================================
 # warehouse explorer
 # ======================================================================
+def _barcodes_for(item_codes):
+	"""One barcode per item: the first, which is the one on the label.
+
+	Fetched for the whole screen in a single query — a card is not worth one of its own.
+	"""
+	codes = [c for c in set(item_codes or []) if c]
+	if not codes:
+		return {}
+	found = {}
+	# highest idx first, so the lowest — the primary barcode — is what remains
+	for r in frappe.get_all(
+		"Item Barcode", filters={"parent": ("in", codes)},
+		fields=["parent", "barcode"], order_by="idx desc", limit_page_length=0,
+	):
+		found[r.parent] = r.barcode
+	return found
+
+
 def _items_by_barcode(search):
 	"""Item codes whose barcode matches what was typed — or scanned.
 
@@ -975,8 +997,10 @@ def get_locations_with_items(warehouse=None, search=None):
 	if scope is not None:
 		stock = [r for r in stock if r.warehouse in scope]
 
+	barcodes = _barcodes_for([r.item_code for r in stock])
 	by_section = {}
 	for r in stock:
+		r.barcode = barcodes.get(r.item_code)
 		by_section.setdefault(r.location, []).append(r)
 
 	# zones are an organising layer over the same locations — one lookup, not one per card

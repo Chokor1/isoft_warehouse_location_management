@@ -1249,6 +1249,7 @@ isoft_warehouse_location_management.App = class {
 							<div class="ip-cardlet-main">
 								<div class="ip-cardlet-code">${esc(it.item_code)}</div>
 								<div class="ip-cardlet-name">${esc(it.item_name || '')}</div>
+								${it.barcode ? `<div class="ip-barcode"><i class="fa fa-barcode"></i>${esc(it.barcode)}</div>` : ''}
 							</div>
 							<div class="ip-cardlet-qty${movable && !s.is_unassigned ? ' ip-editable' : ''}"
 								title="${movable && !s.is_unassigned ? esc(__('Click to set what this shelf holds')) : ''}"
@@ -1469,6 +1470,7 @@ isoft_warehouse_location_management.App = class {
 					<div class="ip-dock-card-main">
 						<div class="ip-dock-card-code">${esc(it.item_code)}</div>
 						<div class="ip-dock-card-name">${esc(it.item_name || '')}</div>
+						${it.barcode ? `<div class="ip-barcode"><i class="fa fa-barcode"></i>${esc(it.barcode)}</div>` : ''}
 						${single_wh ? '' : `<div class="ip-dock-card-wh">${esc(it.warehouse)}</div>`}
 					</div>
 					<div class="ip-dock-card-side">

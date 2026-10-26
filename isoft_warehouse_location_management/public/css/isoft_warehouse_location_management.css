@@ -853,3 +853,13 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 .ip-ws-loc.is-done .ip-ws-loc-state{color:var(--ip-ok-text)}
 .ip-ws-loc-meta{font-size:11.5px;line-height:1.4;color:var(--ip-muted)}
 .ip-ws-nomatch{padding:22px 10px;text-align:center;color:var(--ip-muted)}
+
+/* The barcode under an item: what a scanner reads, so it is set apart from the name it
+   sits under — smaller, in its own colour, and in a face where 0 and O cannot be
+   confused. Its own token, because muted grey would read as more item name. */
+:root{--ip-barcode:#0f766e}
+[data-theme="dark"]{--ip-barcode:#5eead4}
+.ip-barcode{display:flex;align-items:center;gap:5px;margin-top:2px;font-size:10.5px;font-weight:600;
+  letter-spacing:.4px;color:var(--ip-barcode);font-variant-numeric:tabular-nums;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.ip-barcode .fa{font-size:10px;opacity:.75}
