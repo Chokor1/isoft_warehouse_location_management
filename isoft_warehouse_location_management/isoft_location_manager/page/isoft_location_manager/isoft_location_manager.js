@@ -380,7 +380,7 @@ isoft_warehouse_location_management.App = class {
 				</div>
 				<select class="ip-input ip-zone-filter"><option value="">${esc(__('All zones'))}</option></select>
 				<div class="ip-search"><i class="fa fa-search"></i>
-					<input class="ip-input ip-wh-search" placeholder="Search item or location…" value="${esc(search)}"></div>
+					<input class="ip-input ip-wh-search" placeholder="${esc(__('Search item, barcode or location…'))}" value="${esc(search)}"></div>
 			</div>
 			<div class="ip-explorer"><div class="ip-loading"><div class="ip-spin"></div></div></div>`);
 
@@ -1407,7 +1407,7 @@ isoft_warehouse_location_management.App = class {
 					<div class="ip-dock-inner">
 						<div class="ip-dock-tools">
 							<div class="ip-search ip-dock-searchbox"><i class="fa fa-search"></i>
-								<input class="ip-input ip-dock-search" placeholder="${esc(__('Search item…'))}"></div>
+								<input class="ip-input ip-dock-search" placeholder="${esc(__('Search item or scan a barcode…'))}"></div>
 							<div class="ip-dock-tip"><i class="fa fa-hand-rock-o"></i>
 								${esc(__('Drag an item onto a location to put it away'))}</div>
 							<button class="ip-dock-close" type="button" title="${esc(__('Close'))}">&times;</button>

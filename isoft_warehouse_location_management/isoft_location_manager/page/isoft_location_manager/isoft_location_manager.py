@@ -333,8 +333,14 @@ def get_unassigned(warehouse=None, search=None, start=0, limit=60, counts_only=0
 	like_clause, like_params = "", []
 	if search:
 		like = "%{0}%".format(search.strip())
-		like_clause = " and (b.item_code like %s or i.item_name like %s)"
+		parts = ["b.item_code like %s", "i.item_name like %s"]
 		like_params = [like, like]
+		scanned = _items_by_barcode(search)
+		if scanned:
+			# the dock is where loose stock is picked up from, and it is scanned there too
+			parts.append("b.item_code in %s")
+			like_params.append(tuple(scanned))
+		like_clause = " and ({0})".format(" or ".join(parts))
 
 	body = """
 		from `tabBin` b
@@ -918,11 +924,35 @@ def clear_drift(warehouse, item_code):
 # ======================================================================
 # warehouse explorer
 # ======================================================================
+def _items_by_barcode(search):
+	"""Item codes whose barcode matches what was typed — or scanned.
+
+	A scanner sends the whole barcode and presses Enter, so the exact match is the case
+	that matters and is tried first. A partial one helps somebody keying in the first
+	digits by hand, but only once there are enough of them to mean something: on a short
+	fragment every barcode on the site would match, which is slower and says nothing.
+	"""
+	search = (search or "").strip()
+	if not search:
+		return set()
+	exact = frappe.get_all("Item Barcode", filters={"barcode": search}, pluck="parent", limit_page_length=0)
+	if exact or len(search) < 5:
+		return set(exact)
+	return set(
+		frappe.get_all(
+			"Item Barcode", filters={"barcode": ("like", "%{0}%".format(search))},
+			pluck="parent", limit_page_length=200,
+		)
+	)
+
+
 @frappe.whitelist()
 def get_locations_with_items(warehouse=None, search=None):
 	_require_access()
 	scope = _scope(warehouse)
 	search = (search or "").strip().lower()
+	# a scan finds the item the barcode is stuck on, wherever it is put away
+	scanned = _items_by_barcode(search)
 
 	locations = frappe.get_all(
 		"Warehouse Location",
@@ -970,7 +1000,9 @@ def get_locations_with_items(warehouse=None, search=None):
 			sec_match = search in (s.location_code or "").lower() or search in (s.location_name or "").lower()
 			items = [
 				i for i in items
-				if search in (i.item_code or "").lower() or search in (i.item_name or "").lower()
+				if search in (i.item_code or "").lower()
+				or search in (i.item_name or "").lower()
+				or i.item_code in scanned
 			] if not sec_match else items
 			if not sec_match and not items:
 				continue
