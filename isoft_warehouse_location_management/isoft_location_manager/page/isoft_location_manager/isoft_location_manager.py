@@ -1200,7 +1200,9 @@ def update_location(name, location_name=None, description=None, is_active=None):
 	_require_access()
 	doc = frappe.get_doc("Warehouse Location", name)
 	if location_name is not None:
-		doc.location_name = location_name
+		# A location always answers to something, and the field is mandatory: blank falls
+		# back to its code, which is what creating one does.
+		doc.location_name = (location_name or "").strip() or doc.location_code
 	if description is not None:
 		doc.description = description
 	if is_active is not None:

@@ -794,6 +794,10 @@ isoft_warehouse_location_management.App = class {
 						<div class="ip-muted" style="font-size:12px;margin-top:6px">${esc(
 							__('Drag an item onto this column, or use Put away on the bar below.'))}</div></div>`}
 				<div class="ip-loc-settings">
+					<label>${esc(__('Name'))}
+						<input class="ip-input ip-loc-name" value="${esc(
+							loc.location_name && loc.location_name !== loc.location_code ? loc.location_name : '')}"
+							placeholder="${esc(loc.location_code || '')}"></label>
 					<label>${esc(__('Description'))}
 						<input class="ip-input ip-loc-desc" value="${esc(loc.description || '')}"></label>
 					<label>${esc(__('Zone'))}
@@ -887,6 +891,10 @@ isoft_warehouse_location_management.App = class {
 		const apply = () => {
 			const changes = collect();
 			const desc = $body.find('.ip-loc-desc').val();
+			// Left blank, a location is called by its code — which is what creating one does,
+			// so clearing the field puts it back rather than leaving it nameless.
+			const label = ($body.find('.ip-loc-name').val() || '').trim()
+				|| (contents.location && contents.location.location_code) || '';
 			const active = $body.find('.ip-loc-active').is(':checked') ? 1 : 0;
 
 			// filing a location under a zone is not a stock movement, so it rides along
@@ -894,7 +902,7 @@ isoft_warehouse_location_management.App = class {
 			const zone = $body.find('.ip-loc-zone').val() || '';
 			const was_zone = (contents.location && contents.location.zone) || '';
 			const save_settings = () => this.api('update_location', {
-				name, description: desc, is_active: active,
+				name, location_name: label, description: desc, is_active: active,
 			}).then(() => (zone === was_zone
 				? null
 				: this.api('set_location_zone', { locations: JSON.stringify([name]), zone: zone })
@@ -1230,7 +1238,9 @@ isoft_warehouse_location_management.App = class {
 			<div class="ip-col ip-fade${s.is_unassigned ? ' ip-col-unassigned' : ''}"
 				style="--i:${i}" data-location="${esc(s.location)}" data-wh="${esc(s.warehouse)}">
 				<div class="ip-col-head">
-					<div class="ip-col-title">${esc(s.is_unassigned ? __('Unassigned Stock') : (s.location_code || s.location))}</div>
+					<div class="ip-col-title">${esc(s.is_unassigned ? __('Unassigned Stock') : (s.location_code || s.location))}${
+						!s.is_unassigned && s.location_name && s.location_name !== s.location_code
+							? `<span class="ip-col-name">${esc(s.location_name)}</span>` : ''}</div>
 					<div class="ip-col-tools">
 						<span class="ip-col-count">${count}</span>
 						${this.ctx.can_manage

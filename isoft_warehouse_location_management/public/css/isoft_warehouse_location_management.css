@@ -863,3 +863,7 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
   letter-spacing:.4px;color:var(--ip-barcode);font-variant-numeric:tabular-nums;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .ip-barcode .fa{font-size:10px;opacity:.75}
+
+/* The location's own name, beside its code on a column head. Secondary to the code,
+   which is what is painted on the shelf. */
+.ip-col-name{margin-left:7px;font-size:11.5px;font-weight:500;color:var(--ip-muted)}
