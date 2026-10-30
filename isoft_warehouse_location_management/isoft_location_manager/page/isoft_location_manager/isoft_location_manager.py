@@ -324,6 +324,24 @@ def _count_locations(scope):
 	return len(rows)
 
 
+def _scope_label(warehouse, scope):
+	"""What the dock says it is showing.
+
+	"all warehouses" is only true for someone who may see them all. A user permitted one
+	warehouse was being told the loose stock of every warehouse was in front of them,
+	when it was only ever their own.
+	"""
+	if warehouse:
+		return warehouse
+	if scope is None:
+		return _("all warehouses")
+	if len(scope) == 1:
+		return list(scope)[0]
+	# narrowed by the enabled list, by User Permissions, or by both — the count is the
+	# one thing that is true either way
+	return _("{0} warehouses").format(len(scope))
+
+
 @frappe.whitelist()
 def get_unassigned(warehouse=None, search=None, start=0, limit=60, counts_only=0):
 	"""Everything in the warehouse that has not been put away on a shelf yet.
@@ -385,7 +403,7 @@ def get_unassigned(warehouse=None, search=None, start=0, limit=60, counts_only=0
 			"has_more": cint(total.get("items")) > 0,
 			"total_items": cint(total.get("items")),
 			"total_qty": flt(total.get("qty")),
-			"scope_label": warehouse or _("all warehouses"),
+			"scope_label": _scope_label(warehouse, scope),
 			"counts_only": 1,
 		}
 
@@ -411,7 +429,7 @@ def get_unassigned(warehouse=None, search=None, start=0, limit=60, counts_only=0
 		"has_more": has_more,
 		"total_items": cint(total.get("items")),
 		"total_qty": flt(total.get("qty")),
-		"scope_label": warehouse or _("all warehouses"),
+		"scope_label": _scope_label(warehouse, scope),
 	}
 
 
