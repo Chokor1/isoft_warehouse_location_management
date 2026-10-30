@@ -145,9 +145,13 @@ isoft_warehouse_location_management.App = class {
 			{ key: 'dashboard', label: 'Dashboard', icon: 'fa-tachometer', tone: 'ip-i-perf' },
 			{ key: 'warehouse', label: 'Locations', icon: 'fa-th-large', tone: 'ip-i-item' },
 			{ key: 'ledger', label: 'Ledger', icon: 'fa-list', tone: 'ip-i-stock' },
-			{ key: 'inventory', label: 'Location Inventory', icon: 'fa-check-square-o', tone: 'ip-i-stock' },
-			{ key: 'transfer', label: 'Import / Export', icon: 'fa-exchange', tone: 'ip-i-buy' },
 		];
+		// counting posts stock corrections and importing creates locations: both are a
+		// manager's work, so an operator is not shown either
+		if (this.ctx.can_manage) {
+			tabs.push({ key: 'inventory', label: 'Location Inventory', icon: 'fa-check-square-o', tone: 'ip-i-stock' });
+			tabs.push({ key: 'transfer', label: 'Import / Export', icon: 'fa-exchange', tone: 'ip-i-buy' });
+		}
 		if (this.ctx.is_admin) tabs.push({ key: 'settings', label: 'Settings', icon: 'fa-cog', tone: 'ip-i-muted' });
 		const esc = frappe.utils.escape_html;
 		const tabs_html = tabs
@@ -230,6 +234,7 @@ isoft_warehouse_location_management.App = class {
 		// has to be taken down deliberately when the view changes
 		this.teardown_dock();
 		this.teardown_explorer_fit();
+		if (view !== 'warehouse') this.selection = null;
 		this.$content.html('<div class="ip-loading"><div class="ip-spin"></div></div>');
 		if (view === 'dashboard') this.dashMode === 'check' ? this.render_check_panel() : this.render_dashboard();
 		else if (view === 'warehouse') this.render_warehouse();
@@ -364,6 +369,8 @@ isoft_warehouse_location_management.App = class {
 	// Layout is the map you use when you are organising the place rather than working it.
 	render_warehouse() {
 		const esc = frappe.utils.escape_html;
+		// picked locations, kept across a quiet refresh but not across a visit elsewhere
+		this.selection = this.selection || new Set();
 		const search = this.whSearch || '';
 		const view = this.locView || (this.locView = 'contents');
 		this.$content.html(`
@@ -381,6 +388,7 @@ isoft_warehouse_location_management.App = class {
 				<select class="ip-input ip-zone-filter"><option value="">${esc(__('All zones'))}</option></select>
 				<div class="ip-search"><i class="fa fa-search"></i>
 					<input class="ip-input ip-wh-search" placeholder="${esc(__('Search item, barcode or location…'))}" value="${esc(search)}"></div>
+				${this.ctx.can_manage ? '<div class="ip-selbar" hidden></div>' : ''}
 			</div>
 			<div class="ip-explorer"><div class="ip-loading"><div class="ip-spin"></div></div></div>`);
 
@@ -411,6 +419,7 @@ isoft_warehouse_location_management.App = class {
 			if (this.allSecs) this.paint_locations($wrap); else load();
 		});
 		this.$content.find('.ip-zones-btn').on('click', () => this.zones_dialog());
+		if (this.ctx.can_manage) this.bind_selection($wrap);
 
 		let t;
 		this.$content.find('.ip-wh-search').on('input', (e) => {
@@ -483,6 +492,75 @@ isoft_warehouse_location_management.App = class {
 			$wrap.scrollTop(top);
 			if (search) $('.ip-dock-search').val(search).trigger('input');
 		}
+	}
+
+	// Picking several locations to delete in one go. The checkbox lives on the column head
+	// and on the layout tile, so the same selection survives switching between the two.
+	bind_selection($wrap) {
+		const $bar = this.$content.find('.ip-selbar');
+		const paint = () => {
+			const n = this.selection.size;
+			$bar.prop('hidden', !n).html(!n ? '' : `
+				<span class="ip-sel-count">${frappe.utils.escape_html(__('{0} selected', [n]))}</span>
+				<button class="ip-btn ip-btn-ghost ip-sel-del"><i class="fa fa-trash-o"></i>${
+					frappe.utils.escape_html(__('Delete'))}</button>
+				<button class="ip-btn ip-btn-light ip-sel-clear">${frappe.utils.escape_html(__('Clear'))}</button>`);
+			$bar.find('.ip-sel-del').on('click', () => this.delete_selected());
+			$bar.find('.ip-sel-clear').on('click', () => {
+				this.selection.clear();
+				$wrap.find('.ip-pick').prop('checked', false);
+				paint();
+			});
+		};
+		this.paint_selbar = paint;
+		$wrap.on('change', '.ip-pick', (e) => {
+			const name = String($(e.currentTarget).attr('data-sec'));
+			if (e.currentTarget.checked) this.selection.add(name); else this.selection.delete(name);
+			paint();
+		});
+		// the checkbox is not a way of opening the location
+		$wrap.on('click', '.ip-pick-box', (e) => e.stopPropagation());
+		paint();
+	}
+
+	delete_selected() {
+		const esc = frappe.utils.escape_html;
+		const names = Array.from(this.selection);
+		if (!names.length) return;
+		this.api('locations_delete_preview', { names: JSON.stringify(names) }).then((p) => {
+			if (!p || !p.location_count) {
+				frappe.msgprint(__('Nothing to delete.'));
+				return;
+			}
+			const lines = [
+				__('Delete {0} location(s): {1}.', [p.location_count,
+					p.locations.map((l) => l.label).join(', ')]),
+			];
+			if (p.item_count) {
+				lines.push(__('{0} item(s), {1} units, go back to unassigned stock. Nothing leaves the warehouse — it simply stops being on a location, and can be put away again from the bar at the bottom.',
+					[p.item_count, format_number(p.total_qty)]));
+			} else {
+				lines.push(__('They are empty, so no stock moves.'));
+			}
+            if (p.declared_for) {
+				lines.push(__('{0} item(s) name one of these as where they are picked from. That is cleared with it.', [p.declared_for]));
+			}
+			(p.refused || []).forEach((r) => lines.push(__('{0} is skipped: {1}.', [r.location, r.reason])));
+			frappe.confirm(lines.map((x) => `<p>${esc(x)}</p>`).join(''), () => {
+				this.api('delete_locations', { names: JSON.stringify(names) }).then((r) => {
+					if (!r) return;
+					frappe.show_alert({
+						message: r.returned
+							? __('{0} location(s) deleted — {1} item(s) back in unassigned stock', [r.count, r.returned])
+							: __('{0} location(s) deleted', [r.count]),
+						indicator: 'green',
+					});
+					this.selection.clear();
+					this.refresh_warehouse({ dock: !!r.returned });
+					if (this.paint_selbar) this.paint_selbar();
+				});
+			});
+		});
 	}
 
 	fit_explorer(selector) {
@@ -722,7 +800,7 @@ isoft_warehouse_location_management.App = class {
 		const name = sec.location || sec.name;
 
 		const d = new frappe.ui.Dialog({
-			title: __('Location {0}', [sec.location_code || name]),
+			title: __('Location {0}', [sec.location_name || sec.location_code || name]),
 			size: 'large',
 			fields: [{ fieldtype: 'HTML', fieldname: 'body' }],
 			primary_action_label: __('Apply'),
@@ -1022,14 +1100,17 @@ isoft_warehouse_location_management.App = class {
 						${manage ? 'draggable="true"' : ''}
 						data-location="${esc(s.location)}" data-wh="${esc(s.warehouse)}">
 						<div class="ip-tile-top">
-							<span class="ip-tile-code">${esc(s.location_code || s.location)}</span>
+							<span class="ip-tile-code">${esc(s.location_name || s.location_code || s.location)}</span>
+							${manage ? `<label class="ip-pick-box" title="${esc(__('Select'))}">
+								<input type="checkbox" class="ip-pick" data-sec="${esc(s.location)}"
+									${this.selection && this.selection.has(s.location) ? 'checked' : ''}></label>` : ''}
 							${manage ? `<button class="ip-tile-edit" data-sec="${esc(s.location)}"
 								title="${esc(__('Edit this location'))}"><i class="fa fa-pencil"></i></button>
 								<button class="ip-tile-del" data-sec="${esc(s.location)}"
 								title="${esc(__('Delete this location'))}"><i class="fa fa-trash-o"></i></button>` : ''}
 						</div>
 						${s.location_name && s.location_name !== s.location_code
-							? `<div class="ip-tile-name">${esc(s.location_name)}</div>` : ''}
+							? `<div class="ip-tile-name">${esc(s.location_code)}</div>` : ''}
 						<div class="ip-tile-stats">
 							<span class="ip-tile-qty">${format_number(s.total_qty)}</span>
 							<span class="ip-tile-items">${esc(__('{0} item(s)', [s.item_count]))}</span>
@@ -1228,6 +1309,7 @@ isoft_warehouse_location_management.App = class {
 	render_kanban($wrap, secs) {
 		const esc = frappe.utils.escape_html;
 		const movable = this.ctx.is_preparer;
+		const manage = this.ctx.can_manage;
 		// A warehouse that has never defined a zone should not suddenly grow a header
 		// saying so, so the grouping only appears once there is something to group by.
 		const zoned = (this.zones || []).length > 0;
@@ -1238,18 +1320,22 @@ isoft_warehouse_location_management.App = class {
 			<div class="ip-col ip-fade${s.is_unassigned ? ' ip-col-unassigned' : ''}"
 				style="--i:${i}" data-location="${esc(s.location)}" data-wh="${esc(s.warehouse)}">
 				<div class="ip-col-head">
-					<div class="ip-col-title">${esc(s.is_unassigned ? __('Unassigned Stock') : (s.location_code || s.location))}${
-						!s.is_unassigned && s.location_name && s.location_name !== s.location_code
-							? `<span class="ip-col-name">${esc(s.location_name)}</span>` : ''}</div>
+					<div class="ip-col-title">${esc(s.is_unassigned
+						? __('Unassigned Stock')
+						: (s.location_name || s.location_code || s.location))}</div>
 					<div class="ip-col-tools">
 						<span class="ip-col-count">${count}</span>
+						${manage && !s.is_unassigned ? `<label class="ip-pick-box" title="${esc(__('Select'))}">
+							<input type="checkbox" class="ip-pick" data-sec="${esc(s.location)}"
+								${this.selection && this.selection.has(s.location) ? 'checked' : ''}></label>` : ''}
 						${this.ctx.can_manage
 							? `<button class="ip-col-edit" data-sec="${esc(s.location)}" title="${esc(__('Edit this location'))}"><i class="fa fa-pencil"></i></button>
 							   <button class="ip-col-del" data-sec="${esc(s.location)}" title="${esc(__('Delete this location'))}"><i class="fa fa-trash-o"></i></button>`
 							: ''}
 					</div>
 				</div>
-				<div class="ip-col-sub">${esc(s.warehouse)} · ${format_number(s.total_qty)} units${
+				<div class="ip-col-sub">${!s.is_unassigned && s.location_name && s.location_name !== s.location_code
+					? '<b class="ip-col-code">' + esc(s.location_code) + '</b> · ' : ''}${esc(s.warehouse)} · ${format_number(s.total_qty)} units${
 					s.is_unassigned ? ' · <span class="ip-col-tag">' + esc(__('not put away yet')) + '</span>' : ''}</div>
 				<div class="ip-col-body">
 					${s.items.length ? s.items.map((it) => `

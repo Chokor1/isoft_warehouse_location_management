@@ -4,7 +4,7 @@
  "docstatus": 0,
  "doctype": "Page",
  "idx": 0,
- "modified": "2026-08-26 00:00:00.000000",
+ "modified": "2026-10-30 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Isoft Location Manager",
  "name": "isoft-location-manager",
@@ -16,6 +16,9 @@
   },
   {
    "role": "Location Manager"
+  },
+  {
+   "role": "Location Operator"
   }
  ],
  "script": null,

@@ -11,7 +11,12 @@ from isoft_warehouse_location_management.isoft_location_manager.doctype.warehous
 
 # Opening this app is a Location Manager's job. Everyone else still sees and chooses
 # locations on the documents they already work with — that needs no role at all.
-PICKING_ROLES = {"Location Manager", "System Manager"}
+# Three levels, not two. Shaping the warehouse — making locations and zones, deleting
+# them, counting, importing — is a different job from moving stock between the shelves
+# that already exist, and an operator does only the second.
+MANAGE_ROLES = {"Location Manager", "System Manager"}
+MOVE_ROLES = MANAGE_ROLES | {"Location Operator"}
+PICKING_ROLES = MOVE_ROLES
 TOL = 1e-9
 
 
@@ -35,9 +40,16 @@ def _require_admin():
 		frappe.throw(_("Only System Manager can manage settings."), frappe.PermissionError)
 
 
-def _require_preparer():
-	if not ({"Location Manager", "System Manager"} & _roles()):
+def _require_manage():
+	"""Shaping the warehouse: locations, zones, counts, imports."""
+	if not (_roles() & MANAGE_ROLES):
 		frappe.throw(_("Only a Location Manager can do this."), frappe.PermissionError)
+
+
+def _require_preparer():
+	"""Moving stock between locations — what an operator is here to do."""
+	if not (_roles() & MOVE_ROLES):
+		frappe.throw(_("You are not allowed to move stock here."), frappe.PermissionError)
 
 
 # ======================================================================
@@ -127,8 +139,8 @@ def get_context():
 	roles = _roles()
 	return {
 		"theme_color": frappe.db.get_single_value("Picking Settings", "theme_color") or "Blue",
-		"is_preparer": bool({"Location Manager", "System Manager"} & roles),
-		"can_manage": bool(PICKING_ROLES & roles),
+		"is_preparer": bool(MOVE_ROLES & roles),
+		"can_manage": bool(MANAGE_ROLES & roles),
 		"is_admin": "System Manager" in roles,
 		"user": frappe.session.user,
 		"warehouses": get_warehouses(),
@@ -762,7 +774,7 @@ def set_item_default_location(item_code, warehouse, location, direction="out", o
 	One location holds the role per warehouse, so setting it here clears it wherever it
 	was before.
 	"""
-	_require_preparer()
+	_require_manage()
 	if direction != "out":
 		frappe.throw(_("Only a pick location can be declared."))
 	field = "default_out"
@@ -815,7 +827,7 @@ def apply_location_contents(location, rows):
 	returns the difference to unassigned stock, raising it takes from there. Nothing
 	here can invent or destroy stock — it only moves it inside the warehouse.
 	"""
-	_require_preparer()
+	_require_manage()
 	loc = frappe.db.get_value(
 		"Warehouse Location", location, ["warehouse", "is_unassigned"], as_dict=True
 	)
@@ -883,7 +895,7 @@ def clear_drift(warehouse, item_code):
 	Posts a real Stock Out movement so the correction is on the record rather than an
 	invisible edit, taking it off the fullest locations first.
 	"""
-	_require_preparer()
+	_require_manage()
 	rows = frappe.get_all(
 		"Location Stock",
 		filters={"warehouse": warehouse, "item_code": item_code, "qty": [">", 0]},
@@ -1158,7 +1170,7 @@ def create_locations(warehouse, rows):
 
 	The location name is taken from the code (no separate name needed). Existing codes are skipped.
 	"""
-	_require_access()
+	_require_manage()
 	if not warehouse:
 		frappe.throw(_("Select a warehouse."))
 	rows = frappe.parse_json(rows)
@@ -1197,7 +1209,7 @@ def create_locations(warehouse, rows):
 
 @frappe.whitelist()
 def update_location(name, location_name=None, description=None, is_active=None):
-	_require_access()
+	_require_manage()
 	doc = frappe.get_doc("Warehouse Location", name)
 	if location_name is not None:
 		# A location always answers to something, and the field is mandatory: blank falls
@@ -1524,7 +1536,7 @@ def get_zones(warehouse=None, with_counts=1):
 def save_zone(warehouse, zone_code, zone_name=None, description=None,
 		is_active=1, name=None):
 	"""Create or rename a zone. The code is the identity; the name is for reading."""
-	_require_preparer()
+	_require_manage()
 	if warehouse not in (_scope(None) or {warehouse}):
 		frappe.throw(_("Warehouse {0} is not in your scope.").format(warehouse))
 
@@ -1546,7 +1558,7 @@ def save_zone(warehouse, zone_code, zone_name=None, description=None,
 @frappe.whitelist()
 def delete_zone(name):
 	"""Remove a zone. Its locations are simply unfiled — no stock moves."""
-	_require_preparer()
+	_require_manage()
 	if not frappe.db.exists("Warehouse Zone", name):
 		return {"ok": True, "unfiled": 0}
 	freed = frappe.db.count("Warehouse Location", {"zone": name})
@@ -1642,7 +1654,7 @@ def delete_location(name):
 	partition does not account for. So the movement is recorded the same way any other
 	re-shelving is, and the totals do not move.
 	"""
-	_require_preparer()
+	_require_manage()
 	loc = frappe.db.get_value(
 		"Warehouse Location", name, ["name", "warehouse", "is_unassigned"], as_dict=True
 	)
@@ -1699,13 +1711,79 @@ def delete_location(name):
 
 
 @frappe.whitelist()
+def locations_delete_preview(names):
+	"""What deleting all of these would mean, before anyone confirms it."""
+	_require_access()
+	names = frappe.parse_json(names) if isinstance(names, str) else (names or [])
+	scope = _scope(None)
+	rows, refused, items, qty, declared = [], [], 0, 0.0, 0
+	for name in names:
+		loc = frappe.db.get_value(
+			"Warehouse Location", name,
+			["name", "location_code", "location_name", "warehouse", "is_unassigned"], as_dict=True,
+		)
+		if not loc:
+			refused.append({"location": name, "reason": _("no longer exists")})
+			continue
+		if cint(loc.is_unassigned):
+			refused.append({"location": loc.location_code or name, "reason": _("unassigned stock is not a location")})
+			continue
+		if scope is not None and loc.warehouse not in scope:
+			refused.append({"location": loc.location_code or name, "reason": _("not in your warehouses")})
+			continue
+		held = frappe.get_all(
+			"Location Stock", filters={"location": name, "qty": [">", 0]},
+			fields=["item_code", "qty"], limit_page_length=0,
+		)
+		mine = frappe.db.count("Item Default Location", {"location": name})
+		items += len(held)
+		qty += sum(flt(r.qty) for r in held)
+		declared += mine
+		rows.append({
+			"location": loc.name,
+			"label": loc.location_name or loc.location_code or loc.name,
+			"code": loc.location_code,
+			"warehouse": loc.warehouse,
+			"item_count": len(held),
+			"total_qty": sum(flt(r.qty) for r in held),
+			"declared_for": mine,
+		})
+	return {
+		"locations": rows, "refused": refused, "location_count": len(rows),
+		"item_count": items, "total_qty": qty, "declared_for": declared,
+	}
+
+
+@frappe.whitelist()
+def delete_locations(names):
+	"""Delete several locations at once.
+
+	Each goes through the same path as deleting one, so whatever they hold is returned
+	to unassigned stock and the ledger records where it went. One failure takes the
+	whole set down with it: a half-done bulk delete is worse than none, because nobody
+	could tell afterwards which half happened.
+	"""
+	_require_manage()
+	names = frappe.parse_json(names) if isinstance(names, str) else (names or [])
+	preview = locations_delete_preview(frappe.as_json(names))
+	done, returned = [], 0
+	for row in preview["locations"]:
+		result = delete_location(row["location"])
+		done.append(row["label"])
+		returned += len((result or {}).get("returned") or [])
+	return {
+		"deleted": done, "count": len(done), "returned": returned,
+		"refused": preview["refused"],
+	}
+
+@frappe.whitelist()
 def set_location_zone(locations, zone=None):
 	"""File one or more locations under a zone (or unfile them with an empty zone).
 
 	Filing is not a stock movement: the goods do not move, only the way the warehouse
 	is described. So this writes the link and nothing else.
 	"""
-	_require_preparer()
+	_require_manage()
 	names = frappe.parse_json(locations) if isinstance(locations, str) else locations
 	if isinstance(names, str):
 		names = [names]
@@ -2030,7 +2108,7 @@ def _inventory_doc(data):
 @frappe.whitelist()
 def inventory_save(data):
 	"""Keep a count as a draft, so a counter can stop and come back to it."""
-	_require_preparer()
+	_require_manage()
 	doc = _inventory_doc(data)
 	doc.flags.ignore_permissions = True
 	doc.save(ignore_permissions=True)
@@ -2040,7 +2118,7 @@ def inventory_save(data):
 @frappe.whitelist()
 def inventory_submit(data):
 	"""Save and post in one step: a failure rolls both back, so nothing half-posts."""
-	_require_preparer()
+	_require_manage()
 	doc = _inventory_doc(data)
 	doc.flags.ignore_permissions = True
 	# submit() saves as part of submitting. Saving first as well ran every check, and wrote
@@ -2060,7 +2138,7 @@ def inventory_submit(data):
 @frappe.whitelist()
 def inventory_cancel(name):
 	"""Undo a posted count: its reconciliation and its movement are cancelled with it."""
-	_require_preparer()
+	_require_manage()
 	doc = frappe.get_doc("Location Inventory", name)
 	_inventory_location(doc.location)
 	if doc.docstatus != 1:
@@ -2073,7 +2151,7 @@ def inventory_cancel(name):
 @frappe.whitelist()
 def inventory_discard(name):
 	"""Throw away a draft. A posted count is cancelled instead, never deleted."""
-	_require_preparer()
+	_require_manage()
 	doc = frappe.get_doc("Location Inventory", name)
 	_inventory_location(doc.location)
 	if doc.docstatus != 0:
@@ -2148,7 +2226,7 @@ def inventory_warehouses():
 @frappe.whitelist()
 def inventory_start(warehouse):
 	"""Open a stocktake on a warehouse. All of its locations start out waiting."""
-	_require_preparer()
+	_require_manage()
 	from isoft_warehouse_location_management.isoft_location_manager.api import is_warehouse_enabled
 
 	# Name what is actually wrong with the warehouse before the scope check, which would
@@ -2201,7 +2279,7 @@ def inventory_session(name):
 @frappe.whitelist()
 def inventory_complete(name):
 	"""Close a stocktake. Counts still in progress have to be posted or discarded first."""
-	_require_preparer()
+	_require_manage()
 	_inventory_in_scope(name)
 	frappe.get_doc("Warehouse Inventory", name).complete()
 	return inventory_session(name)
@@ -2210,7 +2288,7 @@ def inventory_complete(name):
 @frappe.whitelist()
 def inventory_reopen(name):
 	"""Take a completed stocktake back up, unless another is open on the warehouse by now."""
-	_require_preparer()
+	_require_manage()
 	_inventory_in_scope(name)
 	frappe.get_doc("Warehouse Inventory", name).reopen()
 	return inventory_session(name)

@@ -4,7 +4,7 @@
 
 import frappe
 
-ROLES = ["Location Manager"]
+ROLES = ["Location Manager", "Location Operator"]
 
 
 def after_install():

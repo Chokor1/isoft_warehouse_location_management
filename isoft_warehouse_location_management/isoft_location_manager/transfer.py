@@ -73,11 +73,12 @@ LOCATION_TYPES = ("Storage", "Pick Face", "Bulk", "Staging", "Quarantine")
 # ======================================================================
 def _guard():
 	from isoft_warehouse_location_management.isoft_location_manager.page.isoft_location_manager.isoft_location_manager import (
-		_require_preparer,
+		_require_manage,
 		_scope,
 	)
 
-	_require_preparer()
+	# an import creates locations and zones, which is shaping the warehouse
+	_require_manage()
 	return _scope(None)
 
 
