@@ -14,7 +14,15 @@ frappe.ui.form.on('Delivery Note', {
 			}));
 	},
 
+	// ERPNext assigns this list outright in its own onload, and on a first page load
+	// that lands after every refresh handler — so the exemption is re-applied here,
+	// which runs after both, and in refresh for every render after that.
+	onload_post_render: function (frm) {
+		isoft_warehouse_location_management.allow_mirror_cancel(frm);
+	},
+
 	refresh: function (frm) {
+		isoft_warehouse_location_management.allow_mirror_cancel(frm);
 		if (!window.isoft_warehouse_location_management) return;
 		if (!isoft_warehouse_location_management.toggle_grid_locations) return;
 		isoft_warehouse_location_management.toggle_grid_locations(frm, 'items', ['custom_location_allocation'], 'delivery_note');

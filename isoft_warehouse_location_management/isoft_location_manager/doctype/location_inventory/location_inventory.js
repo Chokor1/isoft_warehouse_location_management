@@ -3,6 +3,11 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('Location Inventory', {
+	refresh(frm) {
+		// a count cancels its own reconciliation and movement, in that order, in on_cancel
+		isoft_warehouse_location_management.allow_mirror_cancel(frm, ['Stock Reconciliation']);
+	},
+
 	setup(frm) {
 		// only a real, active location can be counted; unassigned stock is what is left over
 		frm.set_query('location', () => ({

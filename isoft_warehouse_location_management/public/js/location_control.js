@@ -25,6 +25,21 @@ isoft_warehouse_location_management.RESOLVER_ONE = 'isoft_warehouse_location_man
 // it throws inside a promise, so the failure surfaces as console noise while the caller
 // silently gets nothing. Every call is wrapped into a real promise here instead, once,
 // so nothing downstream has to know which jQuery is underneath.
+// Cancelling a document cancels the movement it mirrored: our own on_cancel does that, and
+// Frappe runs it before its back-link check. The desk asks one step earlier, though, and
+// refuses outright unless the user may cancel a Location Stock Movement — which a
+// salesperson has no reason to. Exempting it there leaves the server's check untouched: a
+// mirror somehow left submitted still stops the cancel.
+//
+// Called from onload_post_render and from refresh, never from setup: ERPNext assigns this
+// list outright in its own onload (Sales Invoice, Purchase Invoice), and on a first page
+// load that lands after the refresh handlers too — measured, not assumed.
+isoft_warehouse_location_management.allow_mirror_cancel = function (frm, also) {
+	const mine = ['Location Stock Movement'].concat(also || []);
+	const have = frm.ignore_doctypes_on_cancel_all || [];
+	frm.ignore_doctypes_on_cancel_all = have.concat(mine.filter((d) => have.indexOf(d) === -1));
+};
+
 isoft_warehouse_location_management.promise = function (opts, fallback) {
 	return new Promise((resolve) => {
 		let settled = false;

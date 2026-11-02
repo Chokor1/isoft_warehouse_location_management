@@ -24,7 +24,15 @@ frappe.ui.form.on('Stock Entry', {
 	stock_entry_type: function (frm) { ip_sweep(frm); },
 	purpose: function (frm) { ip_sweep(frm); },
 
+	// ERPNext assigns this list outright in its own onload, and on a first page load
+	// that lands after every refresh handler — so the exemption is re-applied here,
+	// which runs after both, and in refresh for every render after that.
+	onload_post_render: function (frm) {
+		isoft_warehouse_location_management.allow_mirror_cancel(frm);
+	},
+
 	refresh: function (frm) {
+		isoft_warehouse_location_management.allow_mirror_cancel(frm);
 		if (!window.isoft_warehouse_location_management) return;
 		if (isoft_warehouse_location_management.toggle_grid_locations) {
 			// custom_from_location stays hidden on purpose — "Picked From Location" says the

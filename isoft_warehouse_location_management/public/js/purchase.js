@@ -26,7 +26,15 @@ IP_PURCHASE_DOCTYPES.forEach(function (dt) {
 				}));
 		},
 
+		// ERPNext assigns this list outright in its own onload, and on a first page load
+		// that lands after every refresh handler — so the exemption is re-applied here,
+		// which runs after both, and in refresh for every render after that.
+		onload_post_render: function (frm) {
+			isoft_warehouse_location_management.allow_mirror_cancel(frm);
+		},
+
 		refresh: function (frm) {
+			isoft_warehouse_location_management.allow_mirror_cancel(frm);
 			if (!window.isoft_warehouse_location_management || !isoft_warehouse_location_management.toggle_grid_locations) return;
 			// with arrivals barred from being placed, the column would only mislead
 			if (typeof isoft_warehouse_location_management.status !== 'function'
