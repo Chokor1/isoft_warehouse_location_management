@@ -6,7 +6,12 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate
 
-from isoft_warehouse_location_management.isoft_location_manager.api import sort_locations, sort_zones
+from isoft_warehouse_location_management.isoft_location_manager.api import (
+	is_warehouse_enabled,
+	natural_key,
+	sort_locations,
+	sort_zones,
+)
 from isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_location.warehouse_location import UNASSIGNED_CODE
 
 # Opening this app is a Location Manager's job. Everyone else still sees and chooses
@@ -1254,7 +1259,7 @@ def create_movement(entry_type, warehouse, items, posting_date=None, remarks=Non
 	All location-balance rules and the real-stock (Bin) cap are enforced by the
 	Location Stock Movement controller; no GL / Stock Ledger Entry is ever posted.
 	"""
-	_require_access()
+	_require_preparer()
 	rows = frappe.parse_json(items)
 	clean = []
 	for r in rows:
@@ -1284,6 +1289,189 @@ def create_movement(entry_type, warehouse, items, posting_date=None, remarks=Non
 	doc.submit()
 	return doc.name
 
+
+# ======================================================================
+# moving an item by hand — find it, then say how much goes where
+# ======================================================================
+def _unassigned_of(warehouse):
+	from isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_location.warehouse_location import (
+		get_unassigned_location,
+	)
+
+	return get_unassigned_location(warehouse)
+
+
+@frappe.whitelist()
+def move_search_items(q=None, warehouse=None, limit=12):
+	"""Items that are actually in this warehouse, by code, name or barcode.
+
+	Only what is here: moving something the warehouse does not hold is not a move, and
+	offering it would be offering a dead end.
+	"""
+	_require_access()
+	q = (q or "").strip()
+	if not q:
+		return []
+	scope = _scope(warehouse)
+	cond, params = _wh_cond(scope, "b.warehouse")
+	like = "%{0}%".format(q)
+	scanned = _items_by_barcode(q)
+	parts = ["b.item_code like %s", "i.item_name like %s"]
+	args = [like, like]
+	if scanned:
+		parts.append("b.item_code in %s")
+		args.append(tuple(scanned))
+	rows = frappe.db.sql(
+		"""select b.item_code, i.item_name, i.stock_uom, sum(b.actual_qty) as qty
+		   from `tabBin` b join `tabItem` i on i.name = b.item_code
+		   where b.actual_qty > 0 {cond} and ({match})
+		   group by b.item_code, i.item_name, i.stock_uom
+		   order by (b.item_code = %s) desc, b.item_code asc
+		   limit %s""".format(cond=cond, match=" or ".join(parts)),
+		tuple(params) + tuple(args) + (q, cint(limit) or 12),
+		as_dict=True,
+	)
+	barcodes = _barcodes_for([r.item_code for r in rows])
+	for r in rows:
+		r["barcode"] = barcodes.get(r.item_code)
+	return rows
+
+
+@frappe.whitelist()
+def item_placement(item_code, warehouse=None):
+	"""Where this item is right now, warehouse by warehouse, and where it could go.
+
+	Unassigned stock is listed like any other row, because taking something off a shelf
+	and putting something away are the same gesture seen from either end.
+	"""
+	_require_access()
+	from isoft_warehouse_location_management.isoft_location_manager.doctype.location_stock.location_stock import (
+		bin_qty,
+		unassigned_qty,
+	)
+
+	item = frappe.db.get_value("Item", item_code, ["item_name", "stock_uom"], as_dict=True)
+	if not item:
+		frappe.throw(_("There is no item {0}.").format(item_code))
+
+	scope = _scope(warehouse)
+	held = frappe.db.sql(
+		"""select ls.warehouse, ls.location, wl.location_code, wl.location_name, ls.qty
+		   from `tabLocation Stock` ls
+		   join `tabWarehouse Location` wl on wl.name = ls.location
+		   where ls.item_code = %s and ls.qty > 0 and wl.is_unassigned = 0""",
+		(item_code,),
+		as_dict=True,
+	)
+	warehouses = {r.warehouse for r in held if scope is None or r.warehouse in scope}
+	for wh in frappe.db.sql_list(
+		"""select distinct warehouse from `tabBin` where item_code = %s and actual_qty > 0""", (item_code,)
+	):
+		if (scope is None or wh in scope) and is_warehouse_enabled(wh):
+			warehouses.add(wh)
+
+	out = []
+	for wh in sorted(warehouses, key=natural_key):
+		rows = sort_locations([r for r in held if r.warehouse == wh])
+		loose = flt(unassigned_qty(wh, item_code))
+		places = [
+			{
+				"location": r.location, "code": r.location_code,
+				"label": r.location_name or r.location_code, "qty": flt(r.qty), "is_unassigned": 0,
+			}
+			for r in rows
+		]
+		if loose > 0:
+			places.append({
+				"location": _unassigned_of(wh), "code": _("Not put away"),
+				"label": _("Not put away"), "qty": loose, "is_unassigned": 1,
+			})
+		destinations = [
+			{"location": l.name, "label": l.location_name or l.location_code, "code": l.location_code}
+			for l in sort_locations(frappe.get_all(
+				"Warehouse Location",
+				filters={"warehouse": wh, "is_active": 1, "is_unassigned": 0},
+				fields=["name", "location_code", "location_name", "pick_priority", "is_unassigned", "warehouse"],
+				limit_page_length=0,
+			))
+		]
+		out.append({
+			"warehouse": wh,
+			"on_hand": flt(bin_qty(wh, item_code)),
+			"places": places,
+			"destinations": destinations,
+			"unassigned": _unassigned_of(wh),
+		})
+	return {
+		"item_code": item_code, "item_name": item.item_name, "uom": item.stock_uom,
+		"barcode": _barcodes_for([item_code]).get(item_code),
+		"warehouses": out,
+	}
+
+
+@frappe.whitelist()
+def move_item(warehouse, item_code, to_location, rows, remarks=None):
+	"""Move one item from one or more locations into another, in a single document.
+
+	Every row is one leg of the same move, so they are recorded together: the ledger
+	then reads as the one decision it was, rather than as three unrelated movements.
+	"""
+	_require_preparer()
+	scope = _scope(None)
+	if scope is not None and warehouse not in scope:
+		frappe.throw(_("Warehouse {0} is not in your scope.").format(warehouse))
+
+	unassigned = _unassigned_of(warehouse)
+	target = to_location or unassigned
+	legs = []
+	for r in frappe.parse_json(rows) if isinstance(rows, str) else (rows or []):
+		source = (r.get("from_location") or "").strip() or unassigned
+		qty = flt(r.get("qty"))
+		if qty <= 0:
+			continue
+		if source == target:
+			continue
+		legs.append({"item_code": item_code, "qty": qty, "source_location": source, "target_location": target})
+	if not legs:
+		frappe.throw(_("Enter how much to move, on at least one location."))
+
+	for leg in legs:
+		for side in ("source_location", "target_location"):
+			wh = frappe.db.get_value("Warehouse Location", leg[side], "warehouse")
+			if wh != warehouse:
+				frappe.throw(
+					_("Location {0} belongs to {1}, not to {2}.").format(leg[side], wh, warehouse)
+				)
+
+	# One document per kind of move: the controller reads an entry type, and putting
+	# stock away, taking it off a shelf and moving it between two are not the same thing.
+	def kind(leg):
+		if leg["source_location"] == unassigned:
+			return "Stock In"
+		if leg["target_location"] == unassigned:
+			return "Stock Out"
+		return "Transfer"
+
+	made, moved = [], 0.0
+	for entry_type in ("Stock In", "Transfer", "Stock Out"):
+		batch = [l for l in legs if kind(l) == entry_type]
+		if not batch:
+			continue
+		doc = frappe.get_doc({
+			"doctype": "Location Stock Movement",
+			"entry_type": entry_type,
+			"warehouse": warehouse,
+			"posting_date": frappe.utils.nowdate(),
+			"remarks": remarks or _("Moved by hand"),
+			"items": batch,
+		})
+		doc.flags.ignore_permissions = True
+		doc.insert(ignore_permissions=True)
+		doc.submit()
+		made.append(doc.name)
+		moved += sum(flt(l["qty"]) for l in batch)
+
+	return {"movements": made, "qty": moved, "to_location": target}
 
 @frappe.whitelist()
 def create_stock_entry(entry_type, items, source_warehouse=None, target_warehouse=None, posting_date=None):

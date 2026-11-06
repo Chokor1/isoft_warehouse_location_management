@@ -379,6 +379,9 @@ isoft_warehouse_location_management.App = class {
 					<button class="ip-btn ip-btn-primary ip-new-location"><i class="fa fa-plus"></i> New Location</button>
 					<button class="ip-btn ip-zones-btn"><i class="fa fa-th-large"></i> ${esc(__('Zones'))}</button>
 ` : ''}
+				${this.ctx.is_preparer ? `<button class="ip-btn ip-move-btn" title="${esc(
+					__('Find an item and move it between locations'))}"><i class="fa fa-exchange"></i> ${
+					esc(__('Move stock'))}</button>` : ''}
 				<div class="ip-viewtoggle" role="group" aria-label="${esc(__('View'))}">
 					<button class="ip-vt${view === 'contents' ? ' on' : ''}" data-view="contents"
 						title="${esc(__('Show what each location holds'))}"><i class="fa fa-cubes"></i> ${esc(__('Contents'))}</button>
@@ -419,6 +422,7 @@ isoft_warehouse_location_management.App = class {
 			if (this.allSecs) this.paint_locations($wrap); else load();
 		});
 		this.$content.find('.ip-zones-btn').on('click', () => this.zones_dialog());
+		this.$content.find('.ip-move-btn').on('click', () => this.move_dialog());
 		if (this.ctx.can_manage) this.bind_selection($wrap);
 
 		let t;
@@ -561,6 +565,199 @@ isoft_warehouse_location_management.App = class {
 				});
 			});
 		});
+	}
+
+	// Moving an item without dragging it: find it, see every shelf holding it, say how much
+	// comes off each, and where it goes. Unassigned stock is a row like any other, so the
+	// same dialog puts goods away and takes them off a shelf.
+	move_dialog() {
+		const esc = frappe.utils.escape_html;
+		const state = { item: null, data: null, warehouse: null, to: '' };
+		const d = new frappe.ui.Dialog({
+			title: __('Move stock'),
+			size: 'large',
+			fields: [{ fieldtype: 'HTML', fieldname: 'body' }],
+			primary_action_label: __('Move'),
+			primary_action: () => submit(),
+		});
+		const $b = d.get_field('body').$wrapper;
+		$b.html(`
+			<div class="ip-mv">
+				<div class="ip-search ip-mv-searchbox"><i class="fa fa-barcode"></i>
+					<input class="ip-input ip-mv-q" autocomplete="off"
+						placeholder="${esc(__('Scan a barcode, or type an item code or name'))}"></div>
+				<div class="ip-mv-results"></div>
+				<div class="ip-mv-body"><div class="ip-mv-hint">${esc(
+					__('Find the item you want to move. You will see every location holding it.'))}</div></div>
+			</div>`);
+		const $q = $b.find('.ip-mv-q');
+		const $results = $b.find('.ip-mv-results');
+		const $body = $b.find('.ip-mv-body');
+		const warehouse_of = () => (state.data || { warehouses: [] }).warehouses
+			.find((w) => w.warehouse === state.warehouse) || null;
+
+		const paint = () => {
+			const w = warehouse_of();
+			if (!w) {
+				$body.html(`<div class="ip-mv-hint">${esc(__('That item is not in any warehouse you can see.'))}</div>`);
+				return;
+			}
+			const many = (state.data.warehouses || []).length > 1;
+			$body.html(`
+				<div class="ip-mv-item">
+					<div><b>${esc(state.data.item_code)}</b> <span class="ip-muted">${esc(state.data.item_name || '')}</span></div>
+					${state.data.barcode ? `<div class="ip-barcode"><i class="fa fa-barcode"></i>${esc(state.data.barcode)}</div>` : ''}
+				</div>
+				${many ? `<label class="ip-mv-wh">${esc(__('Warehouse'))}
+					<select class="ip-input ip-mv-whsel">${state.data.warehouses.map((x) => `
+						<option value="${esc(x.warehouse)}"${x.warehouse === state.warehouse ? ' selected' : ''}>${
+							esc(x.warehouse)} · ${format_number(x.on_hand)}</option>`).join('')}</select></label>` : ''}
+				<div class="ip-mv-tablewrap"><table class="ip-table ip-mv-table"><thead><tr>
+					<th>${esc(__('Take from'))}</th>
+					<th class="ip-inv-num">${esc(__('Here'))}</th>
+					<th class="ip-inv-num">${esc(__('Move'))}</th>
+				</tr></thead><tbody>${w.places.map((p) => `
+					<tr data-loc="${esc(p.location)}"${p.is_unassigned ? ' class="ip-mv-loose"' : ''}>
+						<td><div class="ip-mv-code">${esc(p.code)}</div>${
+							p.label && p.label !== p.code ? `<div class="ip-muted ip-mv-name">${esc(p.label)}</div>` : ''}</td>
+						<td class="ip-inv-num">${format_number(p.qty)} <span class="ip-muted ip-inv-uom">${esc(state.data.uom || '')}</span></td>
+						<td class="ip-inv-num"><input type="number" class="ip-input ip-mv-qty" min="0" step="any"
+							max="${flt(p.qty)}" placeholder="0"></td>
+					</tr>`).join('')}</tbody></table></div>
+				<div class="ip-mv-foot">
+					<label class="ip-mv-to">${esc(__('Move to'))}
+						<select class="ip-input ip-mv-tosel">
+							<option value="">${esc(__('Not put away (unassigned)'))}</option>
+							${w.destinations.map((x) => `<option value="${esc(x.location)}"${
+								x.location === state.to ? ' selected' : ''}>${esc(x.label)}${
+								x.label !== x.code ? ' · ' + esc(x.code) : ''}</option>`).join('')}
+						</select></label>
+					<div class="ip-mv-sum"></div>
+				</div>`);
+			summarise();
+		};
+
+		const rows_entered = () => {
+			const out = [];
+			$body.find('tbody tr').each(function () {
+				const qty = flt($(this).find('.ip-mv-qty').val());
+				if (qty > 0) out.push({ from_location: String($(this).attr('data-loc')), qty: qty });
+			});
+			return out;
+		};
+
+		const summarise = () => {
+			const w = warehouse_of();
+			const to = String($body.find('.ip-mv-tosel').val() || '');
+			const rows = rows_entered();
+			const total = rows.reduce((a, r) => a + r.qty, 0);
+			const over = [];
+            $body.find('tbody tr').each(function () {
+				const $tr = $(this);
+				const qty = flt($tr.find('.ip-mv-qty').val());
+				const here = flt($tr.find('.ip-mv-qty').attr('max'));
+				$tr.toggleClass('is-over', qty > here + 0.000001);
+				$tr.toggleClass('is-same', !!qty && String($tr.attr('data-loc')) === (to || (w && w.unassigned)));
+				if (qty > here + 0.000001) over.push($tr.find('.ip-mv-code').text());
+			});
+			const name = to
+				? ((w.destinations.find((x) => x.location === to) || {}).label || to)
+				: __('unassigned stock');
+			let msg = '';
+			if (over.length) msg = `<span class="ip-inv-minus">${esc(__('More than {0} holds', [over[0]]))}</span>`;
+			else if ($body.find('tr.is-same').length) msg = `<span class="ip-inv-minus">${esc(__('That is where it already is'))}</span>`;
+			else if (total > 0) msg = esc(__('Moving {0} to {1}', [format_number(total), name]));
+			else msg = `<span class="ip-muted">${esc(__('Enter how much to move'))}</span>`;
+			$body.find('.ip-mv-sum').html(msg);
+		};
+
+		const load = (item_code) => {
+			$body.html(`<div class="ip-loading"><div class="ip-spin"></div></div>`);
+			return this.api('item_placement', { item_code: item_code, warehouse: this.scope || '' })
+				.then((data) => {
+					state.item = item_code;
+					state.data = data;
+					// Open on the warehouse that actually holds the most of it, not the first by
+					// name: with the page showing every warehouse, the first is rarely the one
+					// the person is standing in.
+					const keep = (data.warehouses || []).some((w) => w.warehouse === state.warehouse);
+					if (!keep) {
+						const best = (data.warehouses || []).slice()
+							.sort((a, b) => flt(b.on_hand) - flt(a.on_hand))[0];
+						state.warehouse = (best || {}).warehouse || null;
+					}
+					state.to = '';
+					paint();
+				});
+		};
+
+		const choose = (item_code) => {
+			$results.empty();
+			$q.val('');
+			load(item_code);
+		};
+
+		let timer;
+		const search = () => {
+			const q = ($q.val() || '').trim();
+			if (q.length < 2) { $results.empty(); return; }
+			this.api('move_search_items', { q: q, warehouse: this.scope || '' }).then((rows) => {
+				if (!rows || !rows.length) {
+					$results.html(`<div class="ip-mv-none">${esc(__('Nothing here matches {0}.', [q]))}</div>`);
+					return;
+				}
+				if (rows.length === 1 && (rows[0].item_code.toLowerCase() === q.toLowerCase()
+					|| rows[0].barcode === q)) {
+					choose(rows[0].item_code);
+					return;
+				}
+				$results.html(rows.map((r) => `
+					<button type="button" class="ip-mv-hit" data-item="${esc(r.item_code)}">
+						<span><b>${esc(r.item_code)}</b> <span class="ip-muted">${esc(r.item_name || '')}</span>${
+							r.barcode ? `<span class="ip-barcode"><i class="fa fa-barcode"></i>${esc(r.barcode)}</span>` : ''}</span>
+						<span class="ip-mv-hitqty">${format_number(r.qty)} <span class="ip-muted">${esc(r.stock_uom || '')}</span></span>
+					</button>`).join(''));
+			});
+		};
+
+		$q.on('input', () => { clearTimeout(timer); timer = setTimeout(search, 180); });
+		$q.on('keydown', (e) => {
+			if (e.key !== 'Enter') return;
+			e.preventDefault();
+			clearTimeout(timer);
+			search();
+		});
+		$b.on('click', '.ip-mv-hit', (e) => choose(String($(e.currentTarget).attr('data-item'))));
+		$b.on('change', '.ip-mv-whsel', (e) => { state.warehouse = String(e.target.value); state.to = ''; paint(); });
+		$b.on('input', '.ip-mv-qty', summarise);
+		$b.on('change', '.ip-mv-tosel', (e) => { state.to = String(e.target.value); summarise(); });
+
+		const submit = () => {
+			const w = warehouse_of();
+			if (!w) { frappe.msgprint(__('Find an item first.')); return; }
+			const rows = rows_entered();
+			if (!rows.length) { frappe.msgprint(__('Enter how much to move, on at least one location.')); return; }
+			if ($body.find('tr.is-over').length) { frappe.msgprint(__('One of those is more than the location holds.')); return; }
+			if ($body.find('tr.is-same').length) { frappe.msgprint(__('A location cannot move stock to itself.')); return; }
+			const to = String($body.find('.ip-mv-tosel').val() || '');
+			d.get_primary_btn().prop('disabled', true);
+			this.api('move_item', {
+				warehouse: w.warehouse, item_code: state.item, to_location: to, rows: JSON.stringify(rows),
+			}).then((r) => {
+				if (!r) return;
+				const name = to ? ((w.destinations.find((x) => x.location === to) || {}).label || to) : __('unassigned stock');
+				frappe.show_alert({ message: __('Moved {0} to {1}', [format_number(r.qty), name]), indicator: 'green' });
+				this.refresh_warehouse({ dock: true });
+				load(state.item);   // the dialog stays open, showing where it is now
+			}).always(() => d.get_primary_btn().prop('disabled', false));
+		};
+
+		// The cursor belongs in the scan box the moment the dialog appears: a scanner types
+		// wherever the focus is, and Bootstrap moves focus itself while the dialog animates
+		// in. Take it back when that is done, with a timer in case the event already fired.
+		d.$wrapper.one('shown.bs.modal', () => $q.focus());
+		d.show();
+		setTimeout(() => { if (document.activeElement !== $q[0]) $q.focus(); }, 400);
 	}
 
 	fit_explorer(selector) {

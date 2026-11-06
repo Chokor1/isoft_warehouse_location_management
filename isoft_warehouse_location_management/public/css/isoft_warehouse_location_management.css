@@ -876,3 +876,34 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
   border-radius:9px;background:var(--ip-card);border:1px solid var(--ip-border-strong)}
 .ip-sel-count{font-size:12.5px;font-weight:600;color:var(--ip-text)}
 .ip-selbar .ip-btn{padding:6px 11px;font-size:12.5px}
+
+/* ================= move stock ================= */
+.ip-mv{display:flex;flex-direction:column;gap:12px}
+.ip-mv-searchbox .ip-input{width:100%;min-width:0}
+.ip-mv-results{display:flex;flex-direction:column;gap:5px;max-height:34vh;overflow:auto}
+.ip-mv-hit{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:9px 12px;
+  border-radius:8px;cursor:pointer;text-align:left;color:var(--ip-text);background:var(--ip-card);
+  border:1px solid var(--ip-line)}
+.ip-mv-hit:hover{border-color:var(--ip-primary)}
+.ip-mv-hit .ip-barcode{margin-left:8px;display:inline-flex}
+.ip-mv-hitqty{font-variant-numeric:tabular-nums;white-space:nowrap}
+.ip-mv-none,.ip-mv-hint{padding:14px 2px;color:var(--ip-muted);font-size:12.5px}
+.ip-mv-item{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-bottom:4px;border-bottom:1px solid var(--ip-line)}
+.ip-mv-wh,.ip-mv-to{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ip-muted)}
+.ip-mv-wh .ip-input,.ip-mv-to .ip-input{min-width:200px}
+.ip-mv-tablewrap{max-height:40vh;overflow:auto}
+.ip-mv-table th,.ip-mv-table td{padding:8px 10px}
+.ip-mv-code{font-weight:600}
+.ip-mv-name{font-size:11.5px}
+.ip-mv-qty{width:120px;text-align:center;font-variant-numeric:tabular-nums}
+.ip-mv-table tr.ip-mv-loose .ip-mv-code{color:var(--ip-warn-text)}
+.ip-mv-table tr.is-over .ip-mv-qty,.ip-mv-table tr.is-same .ip-mv-qty{border-color:var(--ip-bad-border);
+  background:var(--ip-bad-bg)}
+.ip-mv-foot{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  padding-top:10px;border-top:1px solid var(--ip-line)}
+.ip-mv-sum{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+@media (max-width:700px){
+  .ip-mv-wh .ip-input,.ip-mv-to .ip-input{min-width:0;width:100%}
+  .ip-mv-foot,.ip-mv-wh,.ip-mv-to{flex-direction:column;align-items:stretch}
+  .ip-mv-qty{width:90px}
+}
