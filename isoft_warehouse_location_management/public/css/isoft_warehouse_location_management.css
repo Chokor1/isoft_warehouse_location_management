@@ -881,7 +881,14 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 /* The dialog is a worksheet, not a form: no boxes around boxes, one hairline between
    rows, and the two dropdowns wear the app's own border instead of the browser's. */
 .ip-mv{display:flex;flex-direction:column;gap:14px}
-.ip-mv-searchbox{border-radius:8px}
+.ip-mv-searchbox{border-radius:8px;border-color:var(--ip-line)}
+/* The dialog puts the cursor in this box the moment it opens, so whatever its focused
+   state looks like is on screen the whole time. The shared focus ring — a saturated
+   border and a 3px halo — reads there as a hard frame drawn around the first line of the
+   dialog. The caret already says where focus is; the icon picks up the accent to confirm
+   it, and the box itself stays quiet. */
+.ip-mv-searchbox:focus-within{border-color:var(--ip-border-strong);box-shadow:none}
+.ip-mv-searchbox:focus-within .fa{color:var(--ip-primary)}
 .ip-mv-searchbox .ip-input{width:100%;min-width:0;padding:10px 4px;font-size:14px}
 
 .ip-mv-results{display:flex;flex-direction:column;gap:4px;max-height:34vh;overflow:auto}
