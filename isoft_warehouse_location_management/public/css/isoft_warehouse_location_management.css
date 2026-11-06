@@ -652,6 +652,18 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 /* The screens keep their structure; these bring the surfaces in line with Isoft
    Invenza: flatter cards, softer icon tiles, quieter buttons and plain table headers. */
 .ip-root *:focus{outline:none}
+/* Frappe appends its dialogs to <body>, outside .ip-root, so that reset never reached the
+   app's own controls inside a dialog and Chrome drew its own focus ring over them:
+   `outline: auto 1px rgb(16,16,16)`, a near-black line hugging the field. On the move
+   dialog's scan box, which is focused the instant the dialog opens, it sat on screen the
+   whole time and read as a black border around the dialog's first field. Every control
+   listed here draws its own focus state, so the UA ring follows ours out of .ip-root.
+   NB measuring this needs a browser with a real window — headless Chrome never holds the
+   window focus, so :focus-visible does not match there and the ring is simply absent from
+   the computed style — check focus states in a windowed browser (e.g. under Xvfb). */
+.ip-input:focus,.ip-input:focus-visible,.ip-search:focus-within,
+.ip-btn:focus,.ip-btn:focus-visible,.ip-sel select:focus,
+.ip-mv :focus,.ip-mv :focus-visible{outline:none}
 .ip-root .ip-btn:focus-visible,.ip-root button:focus-visible,.ip-root .ip-input:focus-visible,.ip-root select:focus-visible{box-shadow:0 0 0 3px color-mix(in srgb,var(--ip-primary) 28%,transparent)}
 .ip-input{border-color:var(--ip-border-strong);border-radius:6px}
 .ip-input:focus{border-color:var(--ip-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--ip-primary) 22%,transparent)}
@@ -881,15 +893,15 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 /* The dialog is a worksheet, not a form: no boxes around boxes, one hairline between
    rows, and the two dropdowns wear the app's own border instead of the browser's. */
 .ip-mv{display:flex;flex-direction:column;gap:14px}
-.ip-mv-searchbox{border-radius:8px;border-color:var(--ip-line)}
-/* The dialog puts the cursor in this box the moment it opens, so whatever its focused
-   state looks like is on screen the whole time. The shared focus ring — a saturated
-   border and a 3px halo — reads there as a hard frame drawn around the first line of the
-   dialog. The caret already says where focus is; the icon picks up the accent to confirm
-   it, and the box itself stays quiet. */
-.ip-mv-searchbox:focus-within{border-color:var(--ip-border-strong);box-shadow:none}
+/* The dialog puts the cursor in this box the moment it opens, so whatever this box looks
+   like while focused is what is on screen the whole time — and a line drawn around the
+   dialog's first field reads as a frame around the dialog. So the box carries no border
+   at all, in either state: it is a soft well, sunk into the dialog. The barcode mark and
+   the caret say where typing goes, and the mark takes the accent while focus is there. */
+.ip-mv-searchbox{border:0;border-radius:9px;background:var(--ip-bg);padding:0 12px}
+.ip-mv-searchbox:focus-within{box-shadow:none}
 .ip-mv-searchbox:focus-within .fa{color:var(--ip-primary)}
-.ip-mv-searchbox .ip-input{width:100%;min-width:0;padding:10px 4px;font-size:14px}
+.ip-mv-searchbox .ip-input{width:100%;min-width:0;padding:11px 4px;font-size:14px;background:none}
 
 .ip-mv-results{display:flex;flex-direction:column;gap:4px;max-height:34vh;overflow:auto}
 .ip-mv-count{padding:2px 2px 4px;font-size:11.5px;font-weight:600;letter-spacing:.3px;
@@ -897,7 +909,7 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 .ip-mv-hit{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;
   padding:9px 12px;border-radius:8px;cursor:pointer;text-align:left;color:var(--ip-text);
   background:var(--ip-card);border:1px solid var(--ip-line)}
-.ip-mv-hit:hover{border-color:var(--ip-primary);background:var(--ip-subtle)}
+.ip-mv-hit:hover,.ip-mv-hit:focus-visible{border-color:var(--ip-primary);background:var(--ip-subtle)}
 .ip-mv-hitname{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
 .ip-mv-hitqty{font-variant-numeric:tabular-nums;white-space:nowrap}
 .ip-mv-none,.ip-mv-hint{padding:14px 2px;color:var(--ip-muted);font-size:12.5px}
@@ -907,7 +919,7 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 .ip-mv-itemname{flex:1;min-width:0;font-size:14px}
 .ip-mv-change{border:0;background:none;padding:0;cursor:pointer;font-size:12px;font-weight:600;
   color:var(--ip-primary)}
-.ip-mv-change:hover{text-decoration:underline}
+.ip-mv-change:hover,.ip-mv-change:focus-visible{text-decoration:underline}
 
 .ip-mv-field{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ip-muted)}
 .ip-mv-field > span:first-child{white-space:nowrap}
@@ -931,6 +943,7 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 .ip-mv-name{font-size:11.5px}
 .ip-mv-uom{font-size:11px}
 .ip-mv-qty{width:104px;text-align:center;font-variant-numeric:tabular-nums;border-radius:7px}
+.ip-mv-qty:focus{box-shadow:inset 0 0 0 1px var(--ip-primary)}
 .ip-mv-table tr.ip-mv-loose .ip-mv-code{color:var(--ip-warn-text)}
 .ip-mv-table tr.is-over .ip-mv-qty,.ip-mv-table tr.is-same .ip-mv-qty{border-color:var(--ip-bad-border);
   background:var(--ip-bad-bg)}
@@ -938,18 +951,23 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 .ip-mv-takeall{border:0;background:none;padding:2px 4px;cursor:pointer;font-size:11.5px;font-weight:600;
   color:var(--ip-primary);opacity:0;transition:opacity .12s}
 .ip-mv-table tbody tr:hover .ip-mv-takeall,.ip-mv-takeall:focus{opacity:1}
+.ip-mv-takeall:focus-visible{text-decoration:underline}
 
 .ip-mv-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
   padding-top:12px;border-top:1px solid var(--ip-line)}
 .ip-mv-picker{position:relative;display:inline-flex}
-.ip-mv-to-q{min-width:240px;border-radius:7px}
+/* the destination field is the dialog's other search box, so it is the same well; focus
+   lands here by a deliberate click or Tab, so it answers with a thin inset accent ring
+   — inset, so nothing shifts and no halo spills over the table above it */
+.ip-mv-to-q{min-width:240px;border:0;border-radius:8px;background:var(--ip-bg);padding:9px 11px}
+.ip-mv-to-q:focus{box-shadow:inset 0 0 0 1px var(--ip-primary)}
 .ip-mv-to-list{position:absolute;left:0;right:0;bottom:calc(100% + 6px);z-index:5;max-height:240px;
   overflow:auto;display:flex;flex-direction:column;gap:2px;padding:5px;border-radius:9px;
   background:var(--ip-card);border:1px solid var(--ip-border-strong);
   box-shadow:0 10px 30px rgba(15,23,42,.18)}
 .ip-mv-to-hit{display:block;width:100%;padding:7px 10px;border:0;border-radius:6px;cursor:pointer;
   text-align:left;font-size:12.5px;color:var(--ip-text);background:none}
-.ip-mv-to-hit:hover{background:var(--ip-subtle)}
+.ip-mv-to-hit:hover,.ip-mv-to-hit:focus-visible{background:var(--ip-subtle)}
 .ip-mv-to-hit.on{background:var(--ip-ok-bg);color:var(--ip-ok-text);font-weight:600}
 .ip-mv-sum{font-size:13px;font-variant-numeric:tabular-nums;text-align:right;flex:1;min-width:180px}
 
