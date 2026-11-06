@@ -878,32 +878,80 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 .ip-selbar .ip-btn{padding:6px 11px;font-size:12.5px}
 
 /* ================= move stock ================= */
-.ip-mv{display:flex;flex-direction:column;gap:12px}
-.ip-mv-searchbox .ip-input{width:100%;min-width:0}
-.ip-mv-results{display:flex;flex-direction:column;gap:5px;max-height:34vh;overflow:auto}
-.ip-mv-hit{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:9px 12px;
-  border-radius:8px;cursor:pointer;text-align:left;color:var(--ip-text);background:var(--ip-card);
-  border:1px solid var(--ip-line)}
-.ip-mv-hit:hover{border-color:var(--ip-primary)}
-.ip-mv-hit .ip-barcode{margin-left:8px;display:inline-flex}
+/* The dialog is a worksheet, not a form: no boxes around boxes, one hairline between
+   rows, and the two dropdowns wear the app's own border instead of the browser's. */
+.ip-mv{display:flex;flex-direction:column;gap:14px}
+.ip-mv-searchbox{border-radius:8px}
+.ip-mv-searchbox .ip-input{width:100%;min-width:0;padding:10px 4px;font-size:14px}
+
+.ip-mv-results{display:flex;flex-direction:column;gap:4px;max-height:34vh;overflow:auto}
+.ip-mv-count{padding:2px 2px 4px;font-size:11.5px;font-weight:600;letter-spacing:.3px;
+  text-transform:uppercase;color:var(--ip-muted)}
+.ip-mv-hit{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;
+  padding:9px 12px;border-radius:8px;cursor:pointer;text-align:left;color:var(--ip-text);
+  background:var(--ip-card);border:1px solid var(--ip-line)}
+.ip-mv-hit:hover{border-color:var(--ip-primary);background:var(--ip-subtle)}
+.ip-mv-hitname{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
 .ip-mv-hitqty{font-variant-numeric:tabular-nums;white-space:nowrap}
 .ip-mv-none,.ip-mv-hint{padding:14px 2px;color:var(--ip-muted);font-size:12.5px}
-.ip-mv-item{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-bottom:4px;border-bottom:1px solid var(--ip-line)}
-.ip-mv-wh,.ip-mv-to{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ip-muted)}
-.ip-mv-wh .ip-input,.ip-mv-to .ip-input{min-width:200px}
-.ip-mv-tablewrap{max-height:40vh;overflow:auto}
-.ip-mv-table th,.ip-mv-table td{padding:8px 10px}
+
+.ip-mv-item{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-bottom:10px;
+  border-bottom:1px solid var(--ip-line)}
+.ip-mv-itemname{flex:1;min-width:0;font-size:14px}
+.ip-mv-change{border:0;background:none;padding:0;cursor:pointer;font-size:12px;font-weight:600;
+  color:var(--ip-primary)}
+.ip-mv-change:hover{text-decoration:underline}
+
+.ip-mv-field{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ip-muted)}
+.ip-mv-field > span:first-child{white-space:nowrap}
+/* a select without the browser's own frame and arrow */
+.ip-sel{position:relative;display:inline-flex;align-items:center}
+.ip-sel select{appearance:none;-webkit-appearance:none;padding-right:30px;min-width:220px;
+  border:1px solid var(--ip-line);border-radius:7px;background:var(--ip-card)}
+.ip-sel select:focus{outline:none;border-color:var(--ip-primary)}
+.ip-sel .fa{position:absolute;right:10px;pointer-events:none;color:var(--ip-muted);font-size:13px}
+
+.ip-mv-tablewrap{max-height:40vh;overflow:auto;margin:0 -4px}
+.ip-mv-table{width:100%;border-collapse:collapse;font-size:13px}
+.ip-mv-table th{padding:4px 8px;text-align:left;font-size:11px;font-weight:600;letter-spacing:.4px;
+  text-transform:uppercase;color:var(--ip-muted);border-bottom:1px solid var(--ip-line)}
+.ip-mv-table td{padding:9px 8px;border-bottom:1px solid var(--ip-line);vertical-align:middle}
+.ip-mv-table tbody tr:last-child td{border-bottom:0}
+.ip-mv-table tbody tr:hover td{background:var(--ip-subtle)}
+.ip-mv-num{text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ip-mv-table th.ip-mv-num{text-align:center}
 .ip-mv-code{font-weight:600}
 .ip-mv-name{font-size:11.5px}
-.ip-mv-qty{width:120px;text-align:center;font-variant-numeric:tabular-nums}
+.ip-mv-uom{font-size:11px}
+.ip-mv-qty{width:104px;text-align:center;font-variant-numeric:tabular-nums;border-radius:7px}
 .ip-mv-table tr.ip-mv-loose .ip-mv-code{color:var(--ip-warn-text)}
 .ip-mv-table tr.is-over .ip-mv-qty,.ip-mv-table tr.is-same .ip-mv-qty{border-color:var(--ip-bad-border);
   background:var(--ip-bad-bg)}
-.ip-mv-foot{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
-  padding-top:10px;border-top:1px solid var(--ip-line)}
-.ip-mv-sum{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.ip-mv-all{width:54px;text-align:right}
+.ip-mv-takeall{border:0;background:none;padding:2px 4px;cursor:pointer;font-size:11.5px;font-weight:600;
+  color:var(--ip-primary);opacity:0;transition:opacity .12s}
+.ip-mv-table tbody tr:hover .ip-mv-takeall,.ip-mv-takeall:focus{opacity:1}
+
+.ip-mv-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  padding-top:12px;border-top:1px solid var(--ip-line)}
+.ip-mv-picker{position:relative;display:inline-flex}
+.ip-mv-to-q{min-width:240px;border-radius:7px}
+.ip-mv-to-list{position:absolute;left:0;right:0;bottom:calc(100% + 6px);z-index:5;max-height:240px;
+  overflow:auto;display:flex;flex-direction:column;gap:2px;padding:5px;border-radius:9px;
+  background:var(--ip-card);border:1px solid var(--ip-border-strong);
+  box-shadow:0 10px 30px rgba(15,23,42,.18)}
+.ip-mv-to-hit{display:block;width:100%;padding:7px 10px;border:0;border-radius:6px;cursor:pointer;
+  text-align:left;font-size:12.5px;color:var(--ip-text);background:none}
+.ip-mv-to-hit:hover{background:var(--ip-subtle)}
+.ip-mv-to-hit.on{background:var(--ip-ok-bg);color:var(--ip-ok-text);font-weight:600}
+.ip-mv-sum{font-size:13px;font-variant-numeric:tabular-nums;text-align:right;flex:1;min-width:180px}
+
 @media (max-width:700px){
-  .ip-mv-wh .ip-input,.ip-mv-to .ip-input{min-width:0;width:100%}
-  .ip-mv-foot,.ip-mv-wh,.ip-mv-to{flex-direction:column;align-items:stretch}
-  .ip-mv-qty{width:90px}
+  .ip-mv-field{flex-direction:column;align-items:stretch}
+  .ip-sel select,.ip-mv-to-q{min-width:0;width:100%}
+  .ip-mv-picker{display:flex}
+  .ip-mv-foot{flex-direction:column;align-items:stretch}
+  .ip-mv-sum{text-align:left}
+  .ip-mv-qty{width:84px}
+  .ip-mv-takeall{opacity:1}
 }

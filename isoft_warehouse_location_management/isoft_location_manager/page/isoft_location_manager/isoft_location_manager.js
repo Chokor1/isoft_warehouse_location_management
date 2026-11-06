@@ -16,6 +16,25 @@ isoft_warehouse_location_management.THEMES = {
 
 // Hide the Frappe desk chrome (top navbar + page head) while on this page, like Isoft
 // Insights, so it renders as a standalone app. Restored automatically when leaving.
+// Each screen has its own route, so a refresh comes back to the screen you were on and
+// the browser's own Back button walks between them. The slugs read as addresses rather
+// than as the internal view names.
+isoft_warehouse_location_management.VIEW_ROUTES = {
+	dashboard: 'dashboard',
+	warehouse: 'locations',
+	ledger: 'ledger',
+	inventory: 'inventory',
+	transfer: 'import-export',
+	settings: 'settings',
+};
+isoft_warehouse_location_management.ROUTE_VIEWS = (function () {
+	const back = {};
+	Object.keys(isoft_warehouse_location_management.VIEW_ROUTES).forEach((view) => {
+		back[isoft_warehouse_location_management.VIEW_ROUTES[view]] = view;
+	});
+	return back;
+})();
+
 isoft_warehouse_location_management.CHROME = 'header.navbar, .navbar.sticky-top, .navbar.navbar-default.navbar-fixed-top, .navbar-expand-lg, .page-head';
 isoft_warehouse_location_management.apply_chrome = function () {
 	const route = (frappe.get_route_str && frappe.get_route_str()) || '';
@@ -57,8 +76,21 @@ frappe.pages['isoft-location-manager'].on_page_load = function (wrapper) {
 frappe.pages['isoft-location-manager'].on_page_show = function () {
 	isoft_warehouse_location_management.apply_chrome();
 	const app = frappe.pages['isoft-location-manager'].app;
-	if (app && app.ready) app.show(app.current);
+	if (app && app.ready) app.show(app.route_view(), { from_route: true });
 };
+
+// The desk's own Back and Forward, and any link into a particular screen, arrive as a
+// router change rather than as a page load.
+if (!isoft_warehouse_location_management._route_bound && frappe.router && frappe.router.on) {
+	isoft_warehouse_location_management._route_bound = true;
+	frappe.router.on('change', () => {
+		const app = frappe.pages['isoft-location-manager'].app;
+		const route = (frappe.get_route && frappe.get_route()) || [];
+		if (!app || !app.ready || app._routing || route[0] !== 'isoft-location-manager') return;
+		const view = app.route_view();
+		if (view !== app.current) app.show(view, { from_route: true });
+	});
+}
 
 frappe.pages['isoft-location-manager'].on_page_hide = function () {
 	$(isoft_warehouse_location_management.CHROME).show();
@@ -94,7 +126,10 @@ isoft_warehouse_location_management.App = class {
 			this.apply_theme();
 			this.render_shell();
 			this.ready = true;
-			this.show('dashboard');
+			// A bare /app/isoft-location-manager names no screen. Open the dashboard and put
+			// it in the address bar, so every screen has an address a refresh can return to.
+			const asked = (frappe.get_route() || [])[1];
+			this.show(this.route_view(), { from_route: !!asked });
 		});
 	}
 
@@ -227,8 +262,26 @@ isoft_warehouse_location_management.App = class {
 		this.$body.find('.ip-scope').toggle(this.current !== 'settings');
 	}
 
-	show(view) {
+	// Which screen the address bar is asking for.
+	route_view() {
+		const route = (frappe.get_route && frappe.get_route()) || [];
+		return isoft_warehouse_location_management.ROUTE_VIEWS[route[1]] || 'dashboard';
+	}
+
+	// Put the screen in the address bar, without answering our own change event.
+	sync_route(view) {
+		const slug = isoft_warehouse_location_management.VIEW_ROUTES[view];
+		if (!slug) return;
+		const route = (frappe.get_route && frappe.get_route()) || [];
+		if (route[0] !== 'isoft-location-manager' || route[1] === slug) return;
+		this._routing = true;
+		frappe.set_route('isoft-location-manager', slug);
+		setTimeout(() => { this._routing = false; }, 0);
+	}
+
+	show(view, opts) {
 		this.current = view;
+		if (!(opts || {}).from_route) this.sync_route(view);
 		this.set_active();
 		// the dock is mounted on the body so it can pin to the viewport — that means it
 		// has to be taken down deliberately when the view changes
@@ -570,6 +623,9 @@ isoft_warehouse_location_management.App = class {
 	// Moving an item without dragging it: find it, see every shelf holding it, say how much
 	// comes off each, and where it goes. Unassigned stock is a row like any other, so the
 	// same dialog puts goods away and takes them off a shelf.
+	// Moving an item without dragging it: find it, see every shelf holding it, say how much
+	// comes off each, and where it goes. Unassigned stock is a row like any other, so the
+	// same dialog puts goods away and takes them off a shelf.
 	move_dialog() {
 		const esc = frappe.utils.escape_html;
 		const state = { item: null, data: null, warehouse: null, to: '' };
@@ -595,6 +651,12 @@ isoft_warehouse_location_management.App = class {
 		const $body = $b.find('.ip-mv-body');
 		const warehouse_of = () => (state.data || { warehouses: [] }).warehouses
 			.find((w) => w.warehouse === state.warehouse) || null;
+		const dest_label = () => {
+			const w = warehouse_of();
+			if (!state.to) return __('Not put away (unassigned)');
+			const hit = (w ? w.destinations : []).find((x) => x.location === state.to);
+			return hit ? hit.label : state.to;
+		};
 
 		const paint = () => {
 			const w = warehouse_of();
@@ -605,36 +667,66 @@ isoft_warehouse_location_management.App = class {
 			const many = (state.data.warehouses || []).length > 1;
 			$body.html(`
 				<div class="ip-mv-item">
-					<div><b>${esc(state.data.item_code)}</b> <span class="ip-muted">${esc(state.data.item_name || '')}</span></div>
+					<div class="ip-mv-itemname"><b>${esc(state.data.item_code)}</b>
+						<span class="ip-muted">${esc(state.data.item_name || '')}</span></div>
 					${state.data.barcode ? `<div class="ip-barcode"><i class="fa fa-barcode"></i>${esc(state.data.barcode)}</div>` : ''}
+					<button type="button" class="ip-mv-change">${esc(__('Change item'))}</button>
 				</div>
-				${many ? `<label class="ip-mv-wh">${esc(__('Warehouse'))}
-					<select class="ip-input ip-mv-whsel">${state.data.warehouses.map((x) => `
+				${many ? `<label class="ip-mv-field"><span>${esc(__('Warehouse'))}</span>
+					<span class="ip-sel"><select class="ip-input ip-mv-whsel">${state.data.warehouses.map((x) => `
 						<option value="${esc(x.warehouse)}"${x.warehouse === state.warehouse ? ' selected' : ''}>${
-							esc(x.warehouse)} · ${format_number(x.on_hand)}</option>`).join('')}</select></label>` : ''}
-				<div class="ip-mv-tablewrap"><table class="ip-table ip-mv-table"><thead><tr>
+							esc(x.warehouse)} · ${format_number(x.on_hand)}</option>`).join('')}</select>
+						<i class="fa fa-angle-down"></i></span></label>` : ''}
+				<div class="ip-mv-tablewrap"><table class="ip-mv-table"><thead><tr>
 					<th>${esc(__('Take from'))}</th>
-					<th class="ip-inv-num">${esc(__('Here'))}</th>
-					<th class="ip-inv-num">${esc(__('Move'))}</th>
+					<th class="ip-mv-num">${esc(__('Here'))}</th>
+					<th class="ip-mv-num">${esc(__('Move'))}</th>
+					<th></th>
 				</tr></thead><tbody>${w.places.map((p) => `
 					<tr data-loc="${esc(p.location)}"${p.is_unassigned ? ' class="ip-mv-loose"' : ''}>
 						<td><div class="ip-mv-code">${esc(p.code)}</div>${
 							p.label && p.label !== p.code ? `<div class="ip-muted ip-mv-name">${esc(p.label)}</div>` : ''}</td>
-						<td class="ip-inv-num">${format_number(p.qty)} <span class="ip-muted ip-inv-uom">${esc(state.data.uom || '')}</span></td>
-						<td class="ip-inv-num"><input type="number" class="ip-input ip-mv-qty" min="0" step="any"
+						<td class="ip-mv-num">${format_number(p.qty)} <span class="ip-muted ip-mv-uom">${esc(state.data.uom || '')}</span></td>
+						<td class="ip-mv-num"><input type="number" class="ip-input ip-mv-qty" min="0" step="any"
 							max="${flt(p.qty)}" placeholder="0"></td>
+						<td class="ip-mv-all"><button type="button" class="ip-mv-takeall"
+							title="${esc(__('Move everything here'))}">${esc(__('All'))}</button></td>
 					</tr>`).join('')}</tbody></table></div>
 				<div class="ip-mv-foot">
-					<label class="ip-mv-to">${esc(__('Move to'))}
-						<select class="ip-input ip-mv-tosel">
-							<option value="">${esc(__('Not put away (unassigned)'))}</option>
-							${w.destinations.map((x) => `<option value="${esc(x.location)}"${
-								x.location === state.to ? ' selected' : ''}>${esc(x.label)}${
-								x.label !== x.code ? ' · ' + esc(x.code) : ''}</option>`).join('')}
-						</select></label>
+					<div class="ip-mv-field ip-mv-dest">
+						<span>${esc(__('Move to'))}</span>
+						<span class="ip-mv-picker">
+							<input class="ip-input ip-mv-to-q" autocomplete="off"
+								placeholder="${esc(__('Search a location…'))}" value="${esc(dest_label())}">
+							<div class="ip-mv-to-list" hidden></div>
+						</span>
+					</div>
 					<div class="ip-mv-sum"></div>
 				</div>`);
 			summarise();
+		};
+
+		const destinations = () => {
+			const w = warehouse_of();
+			const list = [{ location: '', label: __('Not put away (unassigned)'), code: '' }];
+			return list.concat((w ? w.destinations : []).map((x) => x));
+		};
+
+		const paint_dest_list = (q) => {
+			const $list = $body.find('.ip-mv-to-list');
+			q = (q || '').trim().toLowerCase();
+			const hits = destinations().filter((x) => !q
+				|| String(x.label || '').toLowerCase().indexOf(q) !== -1
+				|| String(x.code || '').toLowerCase().indexOf(q) !== -1);
+			if (!hits.length) {
+				$list.html(`<div class="ip-mv-none">${esc(__('No location matches.'))}</div>`).prop('hidden', false);
+				return;
+			}
+            $list.html(hits.slice(0, 60).map((x) => `
+				<button type="button" class="ip-mv-to-hit${x.location === state.to ? ' on' : ''}"
+					data-loc="${esc(x.location)}">${esc(x.label)}${
+					x.code && x.code !== x.label ? ` <span class="ip-muted">${esc(x.code)}</span>` : ''}</button>`).join(''))
+				.prop('hidden', false);
 		};
 
 		const rows_entered = () => {
@@ -648,26 +740,22 @@ isoft_warehouse_location_management.App = class {
 
 		const summarise = () => {
 			const w = warehouse_of();
-			const to = String($body.find('.ip-mv-tosel').val() || '');
+			const target = state.to || (w && w.unassigned);
 			const rows = rows_entered();
 			const total = rows.reduce((a, r) => a + r.qty, 0);
-			const over = [];
-            $body.find('tbody tr').each(function () {
+			let over = null;
+			$body.find('tbody tr').each(function () {
 				const $tr = $(this);
 				const qty = flt($tr.find('.ip-mv-qty').val());
 				const here = flt($tr.find('.ip-mv-qty').attr('max'));
 				$tr.toggleClass('is-over', qty > here + 0.000001);
-				$tr.toggleClass('is-same', !!qty && String($tr.attr('data-loc')) === (to || (w && w.unassigned)));
-				if (qty > here + 0.000001) over.push($tr.find('.ip-mv-code').text());
+				$tr.toggleClass('is-same', !!qty && String($tr.attr('data-loc')) === target);
+				if (qty > here + 0.000001 && !over) over = $tr.find('.ip-mv-code').text();
 			});
-			const name = to
-				? ((w.destinations.find((x) => x.location === to) || {}).label || to)
-				: __('unassigned stock');
-			let msg = '';
-			if (over.length) msg = `<span class="ip-inv-minus">${esc(__('More than {0} holds', [over[0]]))}</span>`;
+			let msg = `<span class="ip-muted">${esc(__('Enter how much to move'))}</span>`;
+			if (over) msg = `<span class="ip-inv-minus">${esc(__('More than {0} holds', [over]))}</span>`;
 			else if ($body.find('tr.is-same').length) msg = `<span class="ip-inv-minus">${esc(__('That is where it already is'))}</span>`;
-			else if (total > 0) msg = esc(__('Moving {0} to {1}', [format_number(total), name]));
-			else msg = `<span class="ip-muted">${esc(__('Enter how much to move'))}</span>`;
+			else if (total > 0) msg = `<b>${esc(__('Moving {0} to {1}', [format_number(total), dest_label()]))}</b>`;
 			$body.find('.ip-mv-sum').html(msg);
 		};
 
@@ -702,21 +790,29 @@ isoft_warehouse_location_management.App = class {
 			const q = ($q.val() || '').trim();
 			if (q.length < 2) { $results.empty(); return; }
 			this.api('move_search_items', { q: q, warehouse: this.scope || '' }).then((rows) => {
+				if (($q.val() || '').trim() !== q) return;   // a later keystroke already won
 				if (!rows || !rows.length) {
 					$results.html(`<div class="ip-mv-none">${esc(__('Nothing here matches {0}.', [q]))}</div>`);
 					return;
 				}
-				if (rows.length === 1 && (rows[0].item_code.toLowerCase() === q.toLowerCase()
-					|| rows[0].barcode === q)) {
+				// A scanned barcode names one item and nothing else, so it is taken straight
+				// away. A typed code never is: ABC is also the beginning of ABCD, and choosing
+				// for someone which of the two they meant is how the wrong item gets moved.
+				if (rows.length === 1 && rows[0].barcode && rows[0].barcode === q) {
 					choose(rows[0].item_code);
 					return;
 				}
-				$results.html(rows.map((r) => `
+				$results.html(`
+					<div class="ip-mv-count">${esc(rows.length === 1
+						? __('One item matches — pick it to go on')
+						: __('{0} items match — pick the one you mean', [rows.length]))}</div>
+					${rows.map((r) => `
 					<button type="button" class="ip-mv-hit" data-item="${esc(r.item_code)}">
-						<span><b>${esc(r.item_code)}</b> <span class="ip-muted">${esc(r.item_name || '')}</span>${
+						<span class="ip-mv-hitname"><b>${esc(r.item_code)}</b>
+							<span class="ip-muted">${esc(r.item_name || '')}</span>${
 							r.barcode ? `<span class="ip-barcode"><i class="fa fa-barcode"></i>${esc(r.barcode)}</span>` : ''}</span>
 						<span class="ip-mv-hitqty">${format_number(r.qty)} <span class="ip-muted">${esc(r.stock_uom || '')}</span></span>
-					</button>`).join(''));
+					</button>`).join('')}`);
 			});
 		};
 
@@ -728,9 +824,41 @@ isoft_warehouse_location_management.App = class {
 			search();
 		});
 		$b.on('click', '.ip-mv-hit', (e) => choose(String($(e.currentTarget).attr('data-item'))));
+		$b.on('click', '.ip-mv-change', () => {
+			state.item = null; state.data = null;
+			$body.html(`<div class="ip-mv-hint">${esc(__('Find the item you want to move.'))}</div>`);
+			$q.focus();
+		});
 		$b.on('change', '.ip-mv-whsel', (e) => { state.warehouse = String(e.target.value); state.to = ''; paint(); });
 		$b.on('input', '.ip-mv-qty', summarise);
-		$b.on('change', '.ip-mv-tosel', (e) => { state.to = String(e.target.value); summarise(); });
+		$b.on('click', '.ip-mv-takeall', (e) => {
+			const $tr = $(e.currentTarget).closest('tr');
+			$tr.find('.ip-mv-qty').val(flt($tr.find('.ip-mv-qty').attr('max')));
+			summarise();
+		});
+		// the destination picker: a search box over the warehouse's own locations
+		$b.on('focus', '.ip-mv-to-q', (e) => { e.currentTarget.select(); paint_dest_list(''); });
+		$b.on('input', '.ip-mv-to-q', (e) => paint_dest_list(e.target.value));
+		$b.on('mousedown', '.ip-mv-to-hit', (e) => {
+			e.preventDefault();
+			state.to = String($(e.currentTarget).attr('data-loc'));
+			$body.find('.ip-mv-to-q').val(dest_label());
+			$body.find('.ip-mv-to-list').prop('hidden', true);
+			summarise();
+		});
+		$b.on('blur', '.ip-mv-to-q', (e) => {
+			setTimeout(() => {
+				$body.find('.ip-mv-to-list').prop('hidden', true);
+				$(e.target).val(dest_label());   // never leave a half-typed location showing
+			}, 120);
+		});
+		$b.on('keydown', '.ip-mv-to-q', (e) => {
+			if (e.key === 'Escape') { $body.find('.ip-mv-to-list').prop('hidden', true); return; }
+			if (e.key !== 'Enter') return;
+			e.preventDefault();
+			const $first = $body.find('.ip-mv-to-hit').first();
+			if ($first.length) $first.trigger('mousedown');
+		});
 
 		const submit = () => {
 			const w = warehouse_of();
@@ -738,15 +866,15 @@ isoft_warehouse_location_management.App = class {
 			const rows = rows_entered();
 			if (!rows.length) { frappe.msgprint(__('Enter how much to move, on at least one location.')); return; }
 			if ($body.find('tr.is-over').length) { frappe.msgprint(__('One of those is more than the location holds.')); return; }
-			if ($body.find('tr.is-same').length) { frappe.msgprint(__('A location cannot move stock to itself.')); return; }
-			const to = String($body.find('.ip-mv-tosel').val() || '');
+            if ($body.find('tr.is-same').length) { frappe.msgprint(__('A location cannot move stock to itself.')); return; }
+			const to = state.to;
+			const label = dest_label();
 			d.get_primary_btn().prop('disabled', true);
 			this.api('move_item', {
 				warehouse: w.warehouse, item_code: state.item, to_location: to, rows: JSON.stringify(rows),
 			}).then((r) => {
 				if (!r) return;
-				const name = to ? ((w.destinations.find((x) => x.location === to) || {}).label || to) : __('unassigned stock');
-				frappe.show_alert({ message: __('Moved {0} to {1}', [format_number(r.qty), name]), indicator: 'green' });
+				frappe.show_alert({ message: __('Moved {0} to {1}', [format_number(r.qty), label]), indicator: 'green' });
 				this.refresh_warehouse({ dock: true });
 				load(state.item);   // the dialog stays open, showing where it is now
 			}).always(() => d.get_primary_btn().prop('disabled', false));
