@@ -820,3 +820,304 @@ def apply_sheets(sheets):
 		r["title"] = _sheet_title(kind)
 		done.append(r)
 	return {"ok": True, "sheets": done}
+
+
+# ======================================================================
+# the Locations board, as a workbook
+# ======================================================================
+# Not the import shape. The sheets above are written to be sent back; these are written
+# to be read, printed and pivoted: one row per item on a shelf, one sheet for the shelves
+# themselves with the empty ones kept (an empty shelf is a fact worth exporting), one for
+# what is not put away, and a cover sheet that says what was asked for — because a
+# spreadsheet that has been mailed on no longer remembers which warehouse, zone or search
+# it came from. Totals are SUBTOTAL, so they follow the reader's filter instead of
+# quietly contradicting it.
+
+REPORT_HEADER_FILL = "FF0F766E"
+REPORT_TITLE_COLOR = "FF0F172A"
+REPORT_MUTED_COLOR = "FF64748B"
+REPORT_RULE_COLOR = "FFD8E0E6"
+QTY_FORMAT = "#,##0.###"
+INT_FORMAT = "#,##0"
+
+
+def _report_sheet(wb, title, subtitle, columns, rows, tab_color=None, total_label=None):
+	"""One sheet: a title block, a styled header, the rows, and a total that follows the filter.
+
+	`columns` are dicts of label / key / width / fmt. A column with a `fmt` is a number,
+	which decides its alignment, its format and whether the total row sums it.
+	"""
+	from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+	from openpyxl.utils import get_column_letter
+	from openpyxl.worksheet.properties import PageSetupProperties
+
+	ws = wb.create_sheet(title[:31])
+	if tab_color:
+		ws.sheet_properties.tabColor = tab_color
+	# every row is ruled by its own bottom border, so the grid underneath is noise
+	ws.sheet_view.showGridLines = False
+
+	last_col = get_column_letter(len(columns))
+	ws["A1"] = title
+	ws["A1"].font = Font(bold=True, size=14, color=REPORT_TITLE_COLOR)
+	ws["A2"] = subtitle
+	ws["A2"].font = Font(size=9, italic=True, color=REPORT_MUTED_COLOR)
+	ws.merge_cells("A1:%s1" % last_col)
+	ws.merge_cells("A2:%s2" % last_col)
+	ws.row_dimensions[1].height = 20
+	ws.row_dimensions[3].height = 6
+
+	head_row = 4
+	head_font = Font(bold=True, size=10, color="FFFFFFFF")
+	head_fill = PatternFill("solid", fgColor=REPORT_HEADER_FILL)
+	rule = Side(style="thin", color=REPORT_RULE_COLOR)
+	for c, col in enumerate(columns, start=1):
+		cell = ws.cell(row=head_row, column=c, value=col["label"])
+		cell.font = head_font
+		cell.fill = head_fill
+		cell.alignment = Alignment(
+			vertical="center", horizontal="right" if col.get("fmt") else "left"
+		)
+		ws.column_dimensions[get_column_letter(c)].width = col.get("width", 18)
+	ws.row_dimensions[head_row].height = 20
+
+	first = head_row + 1
+	for r, row in enumerate(rows or [], start=first):
+		for c, col in enumerate(columns, start=1):
+			cell = ws.cell(row=r, column=c, value=row.get(col["key"]))
+			cell.border = Border(bottom=rule)
+			if col.get("fmt"):
+				cell.number_format = col["fmt"]
+				cell.alignment = Alignment(horizontal="right")
+	last = first + len(rows or []) - 1
+
+	ws.freeze_panes = "A%d" % first
+	ws.auto_filter.ref = "A%d:%s%d" % (head_row, last_col, max(last, first))
+
+	# it will be printed, so it should print like a report: wide, on as many pages as it
+	# takes, with the header repeated and the page number at the foot of each
+	ws.print_title_rows = "%d:%d" % (head_row, head_row)
+	ws.page_setup.orientation = "landscape"
+	ws.page_setup.fitToWidth = 1
+	ws.page_setup.fitToHeight = 0
+	ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+	ws.oddFooter.right.text = "&P / &N"
+	ws.oddFooter.left.text = subtitle[:120]
+
+	if rows and total_label:
+		top = Side(style="medium", color=REPORT_HEADER_FILL)
+		trow = last + 1
+		for c, col in enumerate(columns, start=1):
+			cell = ws.cell(row=trow, column=c)
+			cell.font = Font(bold=True)
+			cell.border = Border(top=top)
+			if c == 1:
+				cell.value = total_label
+			elif col.get("fmt"):
+				letter = get_column_letter(c)
+				cell.value = "=SUBTOTAL(109,{0}{1}:{0}{2})".format(letter, first, last)
+				cell.number_format = col["fmt"]
+				cell.alignment = Alignment(horizontal="right")
+	elif not rows:
+		cell = ws.cell(row=first, column=1, value=_("Nothing to show here."))
+		cell.font = Font(italic=True, color=REPORT_MUTED_COLOR)
+	return ws
+
+
+def _cover_sheet(wb, lines, figures):
+	"""What was asked for, and what came back — so the file still says so next month."""
+	from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+	ws = wb.active
+	ws.title = _("Summary")
+	ws.sheet_properties.tabColor = REPORT_HEADER_FILL
+	ws.column_dimensions["A"].width = 34
+	ws.column_dimensions["B"].width = 30
+	ws.sheet_view.showGridLines = False
+
+	ws["A1"] = _("Warehouse locations")
+	ws["A1"].font = Font(bold=True, size=16, color=REPORT_TITLE_COLOR)
+	ws.merge_cells("A1:B1")
+	ws.row_dimensions[1].height = 24
+
+	r = 3
+	for label, value in lines:
+		ws.cell(row=r, column=1, value=label).font = Font(bold=True, size=10)
+		ws.cell(row=r, column=2, value=value).alignment = Alignment(horizontal="left")
+		r += 1
+
+	r += 1
+	head = ws.cell(row=r, column=1, value=_("What is in this workbook"))
+	head.font = Font(bold=True, size=10, color="FFFFFFFF")
+	head.fill = PatternFill("solid", fgColor=REPORT_HEADER_FILL)
+	ws.cell(row=r, column=2).fill = PatternFill("solid", fgColor=REPORT_HEADER_FILL)
+	rule = Side(style="thin", color=REPORT_RULE_COLOR)
+	r += 1
+	for label, value, fmt in figures:
+		ws.cell(row=r, column=1, value=label).border = Border(bottom=rule)
+		cell = ws.cell(row=r, column=2, value=value)
+		cell.number_format = fmt
+		cell.alignment = Alignment(horizontal="left")
+		cell.border = Border(bottom=rule)
+		r += 1
+	return ws
+
+
+@frappe.whitelist()
+def download_locations(warehouse=None, zone=None, search=None):
+	"""The Locations screen as it is on screen right now, as a workbook."""
+	from isoft_warehouse_location_management.isoft_location_manager.page.isoft_location_manager.isoft_location_manager import (
+		_require_access,
+		_scope,
+		_scope_label,
+		get_locations_with_items,
+		get_unassigned,
+	)
+
+	_require_access()
+	search = (search or "").strip()
+	zone = (zone or "").strip()
+
+	secs = get_locations_with_items(warehouse=warehouse, search=search)
+	zone_label = _("All zones")
+	if zone == "__none__":
+		secs = [s for s in secs if not s.get("zone")]
+		zone_label = _("Not in a zone")
+	elif zone:
+		secs = [s for s in secs if s.get("zone") == zone]
+		zone_label = frappe.db.get_value("Warehouse Zone", zone, "zone_name") or zone
+
+	loose = get_unassigned(warehouse=warehouse, search=search, start=0, limit=100000)
+
+	# one lookup for every unit of measure on the sheet, rather than one per row
+	codes = {i.get("item_code") for s in secs for i in s.get("items") or []}
+	uoms = {}
+	if codes:
+		uoms = {
+			r.name: r.stock_uom
+			for r in frappe.get_all(
+				"Item", filters={"name": ["in", list(codes)]}, fields=["name", "stock_uom"],
+				limit_page_length=0,
+			)
+		}
+
+	# the board groups its columns by zone, naturally ordered, with the unfiled ones last;
+	# a sheet in a different order from the screen it was taken from is a sheet nobody
+	# trusts. sorted() is stable, so inside a zone the server's pick order survives.
+	from isoft_warehouse_location_management.isoft_location_manager.api import natural_key
+
+	secs = sorted(
+		secs,
+		key=lambda s: (
+			0 if s.get("zone") else 1,
+			natural_key(s.get("zone_name") or s.get("zone_code") or ""),
+		),
+	)
+
+	no_zone = _("Not in a zone")
+	stock_rows, location_rows = [], []
+	for s in secs:
+		zname = s.get("zone_name") or s.get("zone_code") or no_zone
+		location_rows.append({
+			"zone": zname,
+			"code": s.get("location_code"),
+			"name": s.get("location_name"),
+			"warehouse": s.get("warehouse"),
+			"items": len(s.get("items") or []),
+			"qty": flt(s.get("total_qty")),
+		})
+		for i in s.get("items") or []:
+			stock_rows.append({
+				"zone": zname,
+				"code": s.get("location_code"),
+				"name": s.get("location_name"),
+				"warehouse": s.get("warehouse"),
+				"item_code": i.get("item_code"),
+				"item_name": i.get("item_name"),
+				"barcode": i.get("barcode"),
+				"qty": flt(i.get("qty")),
+				"uom": uoms.get(i.get("item_code")),
+			})
+
+	loose_rows = [
+		{
+			"warehouse": r.get("warehouse"),
+			"item_code": r.get("item_code"),
+			"item_name": r.get("item_name"),
+			"barcode": r.get("barcode"),
+			"qty": flt(r.get("qty")),
+			"uom": r.get("stock_uom"),
+		}
+		for r in (loose.get("items") or [])
+	]
+
+	scope_label = _scope_label(warehouse, _scope(warehouse))
+	asked = [
+		(_("Warehouse"), scope_label),
+		(_("Zone"), zone_label),
+		(_("Search"), search or _("Everything")),
+		(_("Exported"), frappe.utils.format_datetime(frappe.utils.now())),
+		(_("By"), frappe.session.user),
+	]
+	shelved = sum(r["qty"] for r in stock_rows)
+	units_loose = sum(r["qty"] for r in loose_rows)
+	total_units = shelved + units_loose
+	figures = [
+		(_("Locations"), len(location_rows), INT_FORMAT),
+		(_("Locations holding stock"), len([r for r in location_rows if r["items"]]), INT_FORMAT),
+		(_("Empty locations"), len([r for r in location_rows if not r["items"]]), INT_FORMAT),
+		(_("Lines on shelves"), len(stock_rows), INT_FORMAT),
+		(_("Units on shelves"), shelved, QTY_FORMAT),
+		(_("Items not put away"), len(loose_rows), INT_FORMAT),
+		(_("Units not put away"), units_loose, QTY_FORMAT),
+		(_("Put away"), (shelved / total_units) if total_units else 0, "0.0%"),
+	]
+
+	subtitle = " · ".join(
+		"%s: %s" % (label, value) for label, value in asked if value not in (None, "")
+	)
+
+	from openpyxl import Workbook
+
+	wb = Workbook()
+	_cover_sheet(wb, asked, figures)
+	_report_sheet(
+		wb, _("Stock by location"), subtitle,
+		[
+			{"label": _("Zone"), "key": "zone", "width": 20},
+			{"label": _("Location"), "key": "code", "width": 16},
+			{"label": _("Location name"), "key": "name", "width": 26},
+			{"label": _("Warehouse"), "key": "warehouse", "width": 26},
+			{"label": _("Item"), "key": "item_code", "width": 20},
+			{"label": _("Item name"), "key": "item_name", "width": 38},
+			{"label": _("Barcode"), "key": "barcode", "width": 18},
+			{"label": _("Qty"), "key": "qty", "width": 12, "fmt": QTY_FORMAT},
+			{"label": _("UOM"), "key": "uom", "width": 9},
+		],
+		stock_rows, tab_color="FF0F766E", total_label=_("Total"),
+	)
+	_report_sheet(
+		wb, _("Locations"), subtitle,
+		[
+			{"label": _("Zone"), "key": "zone", "width": 20},
+			{"label": _("Location"), "key": "code", "width": 16},
+			{"label": _("Location name"), "key": "name", "width": 26},
+			{"label": _("Warehouse"), "key": "warehouse", "width": 26},
+			{"label": _("Items"), "key": "items", "width": 10, "fmt": INT_FORMAT},
+			{"label": _("Units"), "key": "qty", "width": 14, "fmt": QTY_FORMAT},
+		],
+		location_rows, tab_color="FF0EA5E9", total_label=_("Total"),
+	)
+	_report_sheet(
+		wb, _("Not put away"), subtitle,
+		[
+			{"label": _("Warehouse"), "key": "warehouse", "width": 26},
+			{"label": _("Item"), "key": "item_code", "width": 20},
+			{"label": _("Item name"), "key": "item_name", "width": 38},
+			{"label": _("Barcode"), "key": "barcode", "width": 18},
+			{"label": _("Qty"), "key": "qty", "width": 12, "fmt": QTY_FORMAT},
+			{"label": _("UOM"), "key": "uom", "width": 9},
+		],
+		loose_rows, tab_color="FFB45309", total_label=_("Total"),
+	)
+	_respond(wb, "ilm-locations-%s.xlsx" % frappe.utils.nowdate())

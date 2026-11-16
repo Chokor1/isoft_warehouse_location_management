@@ -435,6 +435,9 @@ isoft_warehouse_location_management.App = class {
 				${this.ctx.is_preparer ? `<button class="ip-btn ip-move-btn" title="${esc(
 					__('Find an item and move it between locations'))}"><i class="fa fa-exchange"></i> ${
 					esc(__('Move stock'))}</button>` : ''}
+				<button class="ip-btn ip-export-btn" title="${esc(
+					__('Download what is on screen as an Excel workbook'))}"><i class="fa fa-file-excel-o"></i> ${
+					esc(__('Export'))}</button>
 				<div class="ip-viewtoggle" role="group" aria-label="${esc(__('View'))}">
 					<button class="ip-vt${view === 'contents' ? ' on' : ''}" data-view="contents"
 						title="${esc(__('Show what each location holds'))}"><i class="fa fa-cubes"></i> ${esc(__('Contents'))}</button>
@@ -476,6 +479,7 @@ isoft_warehouse_location_management.App = class {
 		});
 		this.$content.find('.ip-zones-btn').on('click', () => this.zones_dialog());
 		this.$content.find('.ip-move-btn').on('click', () => this.move_dialog());
+		this.$content.find('.ip-export-btn').on('click', (e) => this.export_locations(e.currentTarget));
 		if (this.ctx.can_manage) this.bind_selection($wrap);
 
 		let t;
@@ -549,6 +553,29 @@ isoft_warehouse_location_management.App = class {
 			this.fit_explorer();
 			$wrap.scrollTop(top);
 		}
+	}
+
+	// The board, as a workbook.
+	//
+	// It exports what is on screen — the same warehouse, the same zone, the same search —
+	// because a file that quietly ignored the filters would be read as the whole
+	// warehouse and filed as such. The cover sheet repeats all three, since a spreadsheet
+	// that has been mailed on no longer remembers where it came from.
+	export_locations(btn) {
+		const args = {
+			warehouse: this.scope || '',
+			zone: this.zoneFilter || '',
+			search: this.whSearch || '',
+		};
+		const q = Object.keys(args)
+			.filter((k) => args[k])
+			.map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(args[k]))
+			.join('&');
+		const $b = $(btn).prop('disabled', true);
+		frappe.show_alert({ message: __('Building the workbook…'), indicator: 'blue' }, 3);
+		window.open('/api/method/isoft_warehouse_location_management.isoft_location_manager'
+			+ '.transfer.download_locations' + (q ? '?' + q : ''), '_blank');
+		setTimeout(() => $b.prop('disabled', false), 1500);
 	}
 
 	// Picking several locations to delete in one go. The checkbox lives on the column head
