@@ -964,8 +964,14 @@ def _cover_sheet(wb, lines, figures):
 
 
 @frappe.whitelist()
-def download_locations(warehouse=None, zone=None, search=None):
-	"""The Locations screen as it is on screen right now, as a workbook."""
+def download_locations(warehouse=None, zone=None, search=None, hide_zero=1):
+	"""The Locations screen as it is on screen right now, as a workbook.
+
+	`hide_zero` drops the lines a location holds nothing of. The board keeps showing
+	them — a shelf that an item has been emptied off is still that item's shelf, and
+	seeing the zero is how you know — but in a workbook they are rows to scroll past,
+	so they are left out unless they are asked for.
+	"""
 	from isoft_warehouse_location_management.isoft_location_manager.page.isoft_location_manager.isoft_location_manager import (
 		_require_access,
 		_scope,
@@ -977,6 +983,7 @@ def download_locations(warehouse=None, zone=None, search=None):
 	_require_access()
 	search = (search or "").strip()
 	zone = (zone or "").strip()
+	hide_zero = cint(hide_zero)
 
 	secs = get_locations_with_items(warehouse=warehouse, search=search)
 	zone_label = _("All zones")
@@ -1018,15 +1025,20 @@ def download_locations(warehouse=None, zone=None, search=None):
 	stock_rows, location_rows = [], []
 	for s in secs:
 		zname = s.get("zone_name") or s.get("zone_code") or no_zone
+		kept = [
+			i for i in (s.get("items") or [])
+			if not hide_zero or abs(flt(i.get("qty"))) > 0.000001
+		]
 		location_rows.append({
 			"zone": zname,
 			"code": s.get("location_code"),
 			"name": s.get("location_name"),
 			"warehouse": s.get("warehouse"),
-			"items": len(s.get("items") or []),
+			# the count has to mean the rows on the other sheet, or the two disagree
+			"items": len(kept),
 			"qty": flt(s.get("total_qty")),
 		})
-		for i in s.get("items") or []:
+		for i in kept:
 			stock_rows.append({
 				"zone": zname,
 				"code": s.get("location_code"),
@@ -1056,6 +1068,7 @@ def download_locations(warehouse=None, zone=None, search=None):
 		(_("Warehouse"), scope_label),
 		(_("Zone"), zone_label),
 		(_("Search"), search or _("Everything")),
+		(_("Empty lines"), _("Hidden") if hide_zero else _("Included")),
 		(_("Exported"), frappe.utils.format_datetime(frappe.utils.now())),
 		(_("By"), frappe.session.user),
 	]
@@ -1083,14 +1096,16 @@ def download_locations(warehouse=None, zone=None, search=None):
 	_cover_sheet(wb, asked, figures)
 	_report_sheet(
 		wb, _("Stock by location"), subtitle,
+		# the item comes first and the place it is in follows the barcode: this sheet is
+		# read item by item, and the barcode is the last thing that identifies the item
 		[
-			{"label": _("Zone"), "key": "zone", "width": 20},
-			{"label": _("Location"), "key": "code", "width": 16},
-			{"label": _("Location name"), "key": "name", "width": 26},
 			{"label": _("Warehouse"), "key": "warehouse", "width": 26},
 			{"label": _("Item"), "key": "item_code", "width": 20},
 			{"label": _("Item name"), "key": "item_name", "width": 38},
 			{"label": _("Barcode"), "key": "barcode", "width": 18},
+			{"label": _("Zone"), "key": "zone", "width": 20},
+			{"label": _("Location"), "key": "code", "width": 16},
+			{"label": _("Location name"), "key": "name", "width": 26},
 			{"label": _("Qty"), "key": "qty", "width": 12, "fmt": QTY_FORMAT},
 			{"label": _("UOM"), "key": "uom", "width": 9},
 		],

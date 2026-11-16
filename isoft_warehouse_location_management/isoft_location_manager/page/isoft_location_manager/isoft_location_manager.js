@@ -479,7 +479,7 @@ isoft_warehouse_location_management.App = class {
 		});
 		this.$content.find('.ip-zones-btn').on('click', () => this.zones_dialog());
 		this.$content.find('.ip-move-btn').on('click', () => this.move_dialog());
-		this.$content.find('.ip-export-btn').on('click', (e) => this.export_locations(e.currentTarget));
+		this.$content.find('.ip-export-btn').on('click', () => this.export_locations());
 		if (this.ctx.can_manage) this.bind_selection($wrap);
 
 		let t;
@@ -561,21 +561,56 @@ isoft_warehouse_location_management.App = class {
 	// because a file that quietly ignored the filters would be read as the whole
 	// warehouse and filed as such. The cover sheet repeats all three, since a spreadsheet
 	// that has been mailed on no longer remembers where it came from.
-	export_locations(btn) {
-		const args = {
-			warehouse: this.scope || '',
-			zone: this.zoneFilter || '',
-			search: this.whSearch || '',
-		};
-		const q = Object.keys(args)
-			.filter((k) => args[k])
-			.map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(args[k]))
-			.join('&');
-		const $b = $(btn).prop('disabled', true);
-		frappe.show_alert({ message: __('Building the workbook…'), indicator: 'blue' }, 3);
-		window.open('/api/method/isoft_warehouse_location_management.isoft_location_manager'
-			+ '.transfer.download_locations' + (q ? '?' + q : ''), '_blank');
-		setTimeout(() => $b.prop('disabled', false), 1500);
+	export_locations() {
+		const esc = frappe.utils.escape_html;
+		const zone = this.zoneFilter === '__none__'
+			? __('Not in a zone')
+			: (this.zoneFilter
+				? ((this.zones || []).find((z) => z.name === this.zoneFilter) || {}).zone_name
+					|| this.zoneFilter
+				: __('All zones'));
+		const what = [
+			[__('Warehouse'), this.scope || __('All warehouses you can see')],
+			[__('Zone'), zone],
+			[__('Search'), this.whSearch || __('Everything')],
+		];
+		const d = new frappe.ui.Dialog({
+			title: __('Export to Excel'),
+			fields: [
+				{ fieldtype: 'HTML', fieldname: 'what' },
+				{
+					fieldtype: 'Check', fieldname: 'hide_zero', default: 1,
+					label: __('Leave out lines with no quantity'),
+					description: __('A location keeps showing an item it has been emptied of. '
+						+ 'In a workbook those are rows to scroll past.'),
+				},
+			],
+			primary_action_label: __('Export'),
+			primary_action: (values) => {
+				d.hide();
+				const args = {
+					warehouse: this.scope || '',
+					zone: this.zoneFilter || '',
+					search: this.whSearch || '',
+					hide_zero: values.hide_zero ? 1 : 0,
+				};
+				const q = Object.keys(args)
+					.filter((k) => args[k] !== '' && args[k] !== undefined)
+					.map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(args[k]))
+					.join('&');
+				frappe.show_alert({ message: __('Building the workbook…'), indicator: 'blue' }, 3);
+				window.open('/api/method/isoft_warehouse_location_management.isoft_location_manager'
+					+ '.transfer.download_locations' + (q ? '?' + q : ''), '_blank');
+			},
+		});
+		// the filters are named rather than assumed: a workbook taken from a filtered
+		// board and read as the whole warehouse is a wrong number with a date on it
+		d.get_field('what').$wrapper.html(`<div class="ip-exp">
+			<div class="ip-exp-head">${esc(__('This exports what is on screen'))}</div>
+			${what.map(([label, value]) => `<div class="ip-exp-line">
+				<span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}
+		</div>`);
+		d.show();
 	}
 
 	// Picking several locations to delete in one go. The checkbox lives on the column head
