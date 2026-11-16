@@ -166,15 +166,10 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 	transition:height .34s cubic-bezier(.22,1,.36,1)}
 .ip-dock-inner{display:flex;flex-direction:column;max-height:52vh}
 .ip-dock-tools{display:flex;align-items:center;gap:14px;padding:2px 18px 12px;flex:0 0 auto}
-/* what the toolbar search is showing in here, and the way back to everything */
-.ip-dock-term{display:flex;align-items:center;gap:9px;min-width:0;font-size:12px;
-  color:var(--ip-text-2);background:var(--ip-bg);border-radius:20px;padding:4px 5px 4px 13px}
-.ip-dock-term .fa{font-size:11px;color:var(--ip-muted);flex:none}
-.ip-dock-term b{font-weight:600;color:var(--ip-text);overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap}
-.ip-dock-term-clear{flex:none;border:0;background:none;cursor:pointer;font-size:11.5px;
-  font-weight:600;color:var(--ip-primary);padding:3px 10px;border-radius:14px}
-.ip-dock-term-clear:hover{background:var(--ip-subtle)}
+/* The toolbar search fills this box, so it always says what the panel is filtered by,
+   and it stays editable for narrowing further inside the loose stock. */
+.ip-dock-searchbox{flex:0 0 300px;max-width:60%}
+.ip-dock-searchbox .ip-input{border:0;background:none;padding:8px 0;width:100%}
 .ip-dock-tip{font-size:11.5px;color:var(--ip-muted);display:flex;align-items:center;gap:7px}
 .ip-dock-close{margin-left:auto;border:0;background:none;font-size:22px;line-height:1;
 	color:var(--ip-muted);cursor:pointer;padding:0 2px;transition:color .18s ease}

@@ -1798,10 +1798,16 @@ isoft_warehouse_location_management.App = class {
 	// it is holding some of what was asked for — shelves and loose stock on screen
 	// together, which is also the one arrangement in which a card can be dragged from the
 	// second onto the first.
+	//
+	// The dock keeps its own box all the same. The toolbar fills it, so it always shows
+	// what the panel is filtered by, and it stays editable: narrowing inside the loose
+	// stock is a different question from narrowing the board, and asking it should not
+	// empty the shelves you are looking at.
 	search_unassigned() {
 		const term = this.whSearch || '';
 		if (!this.dock || !this.$dock || !this._dock_load || this.dock.search === term) return;
 		this.dock.search = term;
+		this.$dock.find('.ip-dock-search').val(term);
 		if (this._dock_shut_for !== term) this._dock_shut_for = null;
 		return this._dock_load().then(() => {
 			if (!this.dock || this.dock.search !== term) return;
@@ -1856,7 +1862,10 @@ isoft_warehouse_location_management.App = class {
 				<div class="ip-dock-panel">
 					<div class="ip-dock-inner">
 						<div class="ip-dock-tools">
-							<div class="ip-dock-term" hidden></div>
+							<div class="ip-search ip-dock-searchbox"><i class="fa fa-search"></i>
+								<input class="ip-input ip-dock-search" autocomplete="off"
+									placeholder="${esc(__('Search item or scan a barcode…'))}"
+									value="${esc(this.dock ? this.dock.search : (this.whSearch || ''))}"></div>
 							<div class="ip-dock-tip"><i class="fa fa-hand-rock-o"></i>
 								${esc(__('Drag an item onto a location to put it away'))}</div>
 							<button class="ip-dock-close" type="button" title="${esc(__('Close'))}">&times;</button>
@@ -1915,6 +1924,9 @@ isoft_warehouse_location_management.App = class {
 			this._dock_auto = false;
 			this._dock_shut_for = (!want && this.dock.search) ? this.dock.search : null;
 			set_open(want);
+			// opened by hand, so the cursor belongs in here; an open the search asked for
+			// leaves it in the toolbar, which is where the typing is coming from
+			if (want) setTimeout(() => $dock.find('.ip-dock-search').focus(), 260);
 		};
 
 		const render_rows = () => {
@@ -1995,9 +2007,12 @@ isoft_warehouse_location_management.App = class {
 				$dock.find('.ip-dock-items').text(this.dock.search
 					? __('{0} items · {1} units match', [r.total_items, format_number(r.total_qty)])
 					: __('{0} items · {1} units', [r.total_items, format_number(r.total_qty)]));
-				$dock.find('.ip-dock-term').prop('hidden', !this.dock.search)
-					.html(!this.dock.search ? '' : `<i class="fa fa-search"></i><b>${esc(this.dock.search)}</b>
-						<button class="ip-dock-term-clear" type="button">${esc(__('Show everything'))}</button>`);
+				// keep its own box showing what it is filtered by — unless the cursor is
+				// in it, in which case the box is the one doing the filtering
+				const $box = $dock.find('.ip-dock-search');
+				if ($box.length && $box[0] !== document.activeElement && $box.val() !== this.dock.search) {
+					$box.val(this.dock.search);
+				}
 				$dock.toggleClass('is-empty', !r.total_items);
 				$dock.find('.ip-dock-scope').text(this.scope || __('All warehouses'));
 				if (this.dock.open) render_rows(); else sync_height();
@@ -2005,10 +2020,14 @@ isoft_warehouse_location_management.App = class {
 		};
 
 		$dock.find('.ip-dock-handle').on('click', () => user_set_open(!$dock.hasClass('is-open')));
-		$dock.on('click', '.ip-dock-term-clear', (e) => {
-			e.stopPropagation();
-			this.$content.find('.ip-wh-search').val('').trigger('input');
+		// its own box, for narrowing inside the loose stock without disturbing the board
+		let dt;
+		$dock.on('input', '.ip-dock-search', (e) => {
+			this.dock.search = e.target.value;
+			clearTimeout(dt);
+			dt = setTimeout(() => load(), 250);
 		});
+		$dock.on('click', '.ip-dock-search', (e) => e.stopPropagation());
 		$dock.find('.ip-dock-close').on('click', (e) => { e.stopPropagation(); user_set_open(false); });
 		$(document).off('keydown.ipdock').on('keydown.ipdock', (e) => {
 			if (e.key === 'Escape' && $dock.hasClass('is-open')) user_set_open(false);
