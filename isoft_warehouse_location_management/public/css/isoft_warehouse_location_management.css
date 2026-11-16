@@ -987,3 +987,26 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
   .ip-mv-qty{width:84px}
   .ip-mv-takeall{opacity:1}
 }
+
+/* ================= Stock by Location, on the Item form ================= */
+/* It sits under ERPNext's Stock Levels panel and reads as one more level of the same
+   table, so it borrows that panel's quiet: no cards inside the card, one hairline
+   between rows, numbers in a column that lines up. */
+.ip-iloc{display:flex;flex-direction:column;gap:18px;padding:4px 0 2px}
+.ip-iloc-wh{min-width:0}
+.ip-iloc-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;
+  padding-bottom:7px;border-bottom:1px solid var(--ip-border-strong)}
+.ip-iloc-name{font-size:13px;font-weight:600;color:var(--ip-text);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.ip-iloc-onhand{font-size:13px;font-weight:600;color:var(--ip-text);white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+.ip-iloc-table{width:100%;border-collapse:collapse}
+.ip-iloc-table td{padding:8px 0;border-bottom:1px solid var(--ip-line);vertical-align:baseline}
+.ip-iloc-table tr:last-child td{border-bottom:0}
+.ip-iloc-code{font-size:12.5px;font-weight:600;color:var(--ip-text-2)}
+.ip-iloc-label{display:block;font-size:11.5px;font-weight:400;color:var(--ip-muted);margin-top:2px}
+.ip-iloc-qty{text-align:right;white-space:nowrap;font-size:13px;color:var(--ip-text);
+  font-variant-numeric:tabular-nums}
+.ip-iloc-uom{font-size:11px;color:var(--ip-muted);margin-left:3px}
+.ip-iloc-loose .ip-iloc-code,.ip-iloc-loose .ip-iloc-qty{color:var(--ip-warn-text)}
+.ip-iloc-none{font-size:12px;color:var(--ip-muted)}

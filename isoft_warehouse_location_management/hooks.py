@@ -31,6 +31,7 @@ app_include_js = [
 
 # Form customisation.
 doctype_js = {
+	"Item": "public/js/item.js",
 	"Sales Invoice": "public/js/sales_invoice.js",
 	"Stock Entry": "public/js/stock_entry.js",
 	"Delivery Note": "public/js/delivery_note.js",

@@ -1338,6 +1338,84 @@ def move_search_items(q=None, warehouse=None, limit=12):
 
 
 @frappe.whitelist()
+def item_stock_by_location(item_code):
+	"""Where an item's stock is sitting, for the preview on the Item form.
+
+	ERPNext's Stock Levels panel answers "how much, and in which warehouse". Opening
+	the item is the moment you want the rest of that sentence: which shelf, and how
+	much of it is still not put away. This is the same numbers one level down.
+
+	Read-only and deliberately quiet. It needs no location role — anyone who may read
+	the Item sees it, as they already do on the documents they work with — and it
+	never throws: a preview that popped an error dialog on an Item the module does
+	not cover would be worse than no preview. Warehouses the user may not see are
+	dropped by the same scope as the rest of the app, and warehouses that do not use
+	locations are left to the panel above.
+	"""
+	from isoft_warehouse_location_management.isoft_location_manager.api import (
+		enabled_warehouse_set,
+		is_enabled,
+	)
+	from isoft_warehouse_location_management.isoft_location_manager.doctype.location_stock.location_stock import (
+		bin_qty,
+		unassigned_qty,
+	)
+
+	empty = {"warehouses": [], "uom": None}
+	if not is_enabled() or not item_code:
+		return empty
+	if not frappe.has_permission("Item", "read", doc=item_code):
+		return empty
+
+	held = frappe.db.sql(
+		"""select ls.warehouse, wl.location_code, wl.location_name, wl.pick_priority, ls.qty
+		   from `tabLocation Stock` ls
+		   join `tabWarehouse Location` wl on wl.name = ls.location
+		   where ls.item_code = %s and ls.qty > 0 and wl.is_unassigned = 0""",
+		(item_code,),
+		as_dict=True,
+	)
+	names = {r.warehouse for r in held}
+	names |= set(
+		frappe.db.sql_list(
+			"select warehouse from `tabBin` where item_code = %s and actual_qty > 0", (item_code,)
+		)
+	)
+	scope = _scope()
+	allowed = enabled_warehouse_set()
+	names = {
+		w
+		for w in names
+		if (scope is None or w in scope) and (allowed is None or w in allowed)
+	}
+
+	out = []
+	for wh in sorted(names, key=natural_key):
+		rows = sort_locations([r for r in held if r.warehouse == wh])
+		loose = flt(unassigned_qty(wh, item_code))
+		placed = sum(flt(r.qty) for r in rows)
+		if placed <= TOL and loose <= TOL:
+			continue
+		out.append(
+			{
+				"warehouse": wh,
+				"on_hand": flt(bin_qty(wh, item_code)),
+				"placed": placed,
+				"unassigned": loose,
+				"places": [
+					{
+						"code": r.location_code,
+						"label": r.location_name or r.location_code,
+						"qty": flt(r.qty),
+					}
+					for r in rows
+				],
+			}
+		)
+	return {"uom": frappe.db.get_value("Item", item_code, "stock_uom"), "warehouses": out}
+
+
+@frappe.whitelist()
 def item_placement(item_code, warehouse=None):
 	"""Where this item is right now, warehouse by warehouse, and where it could go.
 
