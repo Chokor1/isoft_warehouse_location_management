@@ -481,7 +481,8 @@ isoft_warehouse_location_management.App = class {
 		let t;
 		this.$content.find('.ip-wh-search').on('input', (e) => {
 			this.whSearch = e.target.value;
-			clearTimeout(t); t = setTimeout(load, 220);
+			clearTimeout(t);
+			t = setTimeout(() => { load(); this.search_unassigned(); }, 220);
 		});
 		// the dock lives alongside the board, not inside it — it survives searches and
 		// view switches, and it is the one place unassigned stock is shown
@@ -542,12 +543,11 @@ isoft_warehouse_location_management.App = class {
 			$wrap.scrollTop(top);
 		});
 		if (opts.dock && (this.ctx.is_preparer || this.ctx.can_manage)) {
-			const search = (this.dock && this.dock.search) || '';
+			// the dock reads the toolbar search itself, so nothing to carry over
 			this.teardown_dock();
 			this.render_unassigned_dock();
 			this.fit_explorer();
 			$wrap.scrollTop(top);
-			if (search) $('.ip-dock-search').val(search).trigger('input');
 		}
 	}
 
@@ -1790,6 +1790,32 @@ isoft_warehouse_location_management.App = class {
 		});
 	}
 
+	// One search for the whole warehouse.
+	//
+	// The board shows what is on the shelves and the dock shows what is not, so finding
+	// an item meant typing it twice, in two boxes, the second of them inside a panel that
+	// is shut by default. The toolbar box now drives both, and the dock shows itself when
+	// it is holding some of what was asked for — shelves and loose stock on screen
+	// together, which is also the one arrangement in which a card can be dragged from the
+	// second onto the first.
+	search_unassigned() {
+		const term = this.whSearch || '';
+		if (!this.dock || !this.$dock || !this._dock_load || this.dock.search === term) return;
+		this.dock.search = term;
+		if (this._dock_shut_for !== term) this._dock_shut_for = null;
+		return this._dock_load().then(() => {
+			if (!this.dock || this.dock.search !== term) return;
+			if (term && !this.dock.open && !this.$dock.hasClass('is-empty')
+				&& this._dock_shut_for !== term) {
+				this._dock_auto = true;
+				this._dock_set_open(true, true);
+			} else if (!term && this._dock_auto) {
+				this._dock_auto = false;
+				this._dock_set_open(false, true);
+			}
+		});
+	}
+
 	// ------------------------------------------------------------------
 	// The unassigned dock
 	// ------------------------------------------------------------------
@@ -1805,7 +1831,9 @@ isoft_warehouse_location_management.App = class {
 	render_unassigned_dock() {
 		$('.ip-dock').remove();
 		const esc = frappe.utils.escape_html;
-		const open = localStorage.getItem('ip_dock_open') === '1';
+		// an open the search asked for is not remembered for next time, but it does
+		// survive the board repainting under it
+		const open = !!this._dock_auto || localStorage.getItem('ip_dock_open') === '1';
 
 		// Deliberately no backdrop: the board behind the dock is where cards are dropped,
 		// so dimming it — let alone blocking it — would fight the whole point.
@@ -1828,8 +1856,7 @@ isoft_warehouse_location_management.App = class {
 				<div class="ip-dock-panel">
 					<div class="ip-dock-inner">
 						<div class="ip-dock-tools">
-							<div class="ip-search ip-dock-searchbox"><i class="fa fa-search"></i>
-								<input class="ip-input ip-dock-search" placeholder="${esc(__('Search item or scan a barcode…'))}"></div>
+							<div class="ip-dock-term" hidden></div>
 							<div class="ip-dock-tip"><i class="fa fa-hand-rock-o"></i>
 								${esc(__('Drag an item onto a location to put it away'))}</div>
 							<button class="ip-dock-close" type="button" title="${esc(__('Close'))}">&times;</button>
@@ -1842,7 +1869,7 @@ isoft_warehouse_location_management.App = class {
 		this.$dock = $dock;
 		$('body').addClass('ip-has-dock');
 		const $scroll = $dock.find('.ip-dock-scroll');
-		this.dock = { start: 0, search: '', rows: [], open: open };
+		this.dock = { start: 0, search: this.whSearch || '', rows: [], open: open };
 
 		// --- keep it aligned to the page, not to the window ---
 		const place = () => {
@@ -1873,14 +1900,21 @@ isoft_warehouse_location_management.App = class {
 		};
 		this._dock_sync = sync_height;
 
-		const set_open = (want) => {
+		const set_open = (want, transient) => {
 			$dock.toggleClass('is-open', want);
 			$dock.find('.ip-dock-handle').attr('aria-expanded', want);
-			localStorage.setItem('ip_dock_open', want ? '1' : '0');
+			if (!transient) localStorage.setItem('ip_dock_open', want ? '1' : '0');
 			this.dock.open = want;
 			if (want && !this.dock.rows.length) load();
 			else sync_height();
-			if (want) setTimeout(() => $dock.find('.ip-dock-search').focus(), 260);
+		};
+		// opening or closing it by hand settles it: an open the search made is given up
+		// as soon as the search is cleared, one the user made is not, and a panel shut
+		// while looking for something stays shut until the term changes.
+		const user_set_open = (want) => {
+			this._dock_auto = false;
+			this._dock_shut_for = (!want && this.dock.search) ? this.dock.search : null;
+			set_open(want);
 		};
 
 		const render_rows = () => {
@@ -1958,39 +1992,45 @@ isoft_warehouse_location_management.App = class {
 					this.dock.start = this.dock.rows.length;
 					this.dock.has_more = r.has_more;
 				}
-				$dock.find('.ip-dock-items').text(
-					__('{0} items · {1} units', [r.total_items, format_number(r.total_qty)])
-				);
+				$dock.find('.ip-dock-items').text(this.dock.search
+					? __('{0} items · {1} units match', [r.total_items, format_number(r.total_qty)])
+					: __('{0} items · {1} units', [r.total_items, format_number(r.total_qty)]));
+				$dock.find('.ip-dock-term').prop('hidden', !this.dock.search)
+					.html(!this.dock.search ? '' : `<i class="fa fa-search"></i><b>${esc(this.dock.search)}</b>
+						<button class="ip-dock-term-clear" type="button">${esc(__('Show everything'))}</button>`);
 				$dock.toggleClass('is-empty', !r.total_items);
 				$dock.find('.ip-dock-scope').text(this.scope || __('All warehouses'));
 				if (this.dock.open) render_rows(); else sync_height();
 			});
 		};
 
-		$dock.find('.ip-dock-handle').on('click', () => set_open(!$dock.hasClass('is-open')));
-		$dock.find('.ip-dock-close').on('click', (e) => { e.stopPropagation(); set_open(false); });
+		$dock.find('.ip-dock-handle').on('click', () => user_set_open(!$dock.hasClass('is-open')));
+		$dock.on('click', '.ip-dock-term-clear', (e) => {
+			e.stopPropagation();
+			this.$content.find('.ip-wh-search').val('').trigger('input');
+		});
+		$dock.find('.ip-dock-close').on('click', (e) => { e.stopPropagation(); user_set_open(false); });
 		$(document).off('keydown.ipdock').on('keydown.ipdock', (e) => {
-			if (e.key === 'Escape' && $dock.hasClass('is-open')) set_open(false);
+			if (e.key === 'Escape' && $dock.hasClass('is-open')) user_set_open(false);
 		});
 		// A click anywhere else puts it away, as a menu would. Not a click inside it, in a
 		// dialog or dropdown opened from it, nor while one of its cards is being dragged.
 		$(document).off('mousedown.ipdock touchstart.ipdock').on('mousedown.ipdock touchstart.ipdock', (e) => {
 			if (!$dock.hasClass('is-open') || $dock.hasClass('is-tucked')) return;
+			// while a search is on, this panel is half the answer — clicking the board to
+			// aim at a location must not take that half away
+			if (this.dock && this.dock.search) return;
 			if (!document.body.contains(e.target)) return;
 			if ($(e.target).closest('.ip-dock, .modal, .modal-backdrop, .awesomplete, .datepicker, .dropdown-menu, .ip-drawer-overlay').length) return;
 			set_open(false);
 		});
 
-		let t;
-		$dock.find('.ip-dock-search').on('input', (e) => {
-			this.dock.search = e.target.value;
-			clearTimeout(t);
-			t = setTimeout(() => load(), 250);
-		});
-		$dock.find('.ip-dock-search').on('click', (e) => e.stopPropagation());
 
 		// the count is worth showing even while the panel is shut; rows come with it only
 		// when it is already open, so opening it never fetches twice
+		// the toolbar search drives this panel, so it needs a way in
+		this._dock_load = load;
+		this._dock_set_open = set_open;
 		load();
 	}
 
