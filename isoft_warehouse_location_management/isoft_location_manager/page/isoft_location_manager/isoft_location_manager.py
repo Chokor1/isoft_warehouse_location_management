@@ -13,7 +13,10 @@ from isoft_warehouse_location_management.isoft_location_manager.api import (
 	sort_locations,
 	sort_zones,
 )
-from isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_location.warehouse_location import UNASSIGNED_CODE
+from isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_location.warehouse_location import (
+	UNASSIGNED_CODE,
+	warehouse_prefix,
+)
 
 # Opening this app is a Location Manager's job. Everyone else still sees and chooses
 # locations on the documents they already work with — that needs no role at all.
@@ -1235,10 +1238,96 @@ def create_locations(warehouse, rows):
 	return {"created": len(created), "names": created, "skipped": skipped}
 
 
+# Every reference to a location is a Link, which `rename_doc` follows by itself — except
+# the allocation on a document line, which is a JSON list of {location, qty} in a Text
+# field. Left behind, it would go on naming a location that no longer exists and the
+# sheet, the ledger and the document would stop agreeing.
+ALLOCATION_TABLES = (
+	("Stock Entry Detail", "custom_location_allocation"),
+	("Delivery Note Item", "custom_location_allocation"),
+	("Sales Invoice Item", "custom_location_allocation"),
+)
+
+
+def _rename_in_allocations(old, new):
+	"""Point the allocations on document lines at a location's new name.
+
+	The LIKE only narrows the rows to read; the match itself is made on the parsed
+	value, because one code is often the beginning of another — renaming A-1 must not
+	touch A-10.
+	"""
+	touched = 0
+	for doctype, field in ALLOCATION_TABLES:
+		if not frappe.db.has_column(doctype, field):
+			continue
+		rows = frappe.db.sql(
+			"select name, `{0}` as alloc from `tab{1}` where `{0}` like %s".format(field, doctype),
+			("%{0}%".format(old),),
+			as_dict=True,
+		)
+		for r in rows:
+			try:
+				parts = frappe.parse_json(r.alloc)
+			except Exception:
+				continue
+			if not isinstance(parts, list):
+				continue
+			hit = False
+			for part in parts:
+				if isinstance(part, dict) and part.get("location") == old:
+					part["location"] = new
+					hit = True
+			if hit:
+				frappe.db.set_value(doctype, r.name, field, frappe.as_json(parts), update_modified=False)
+				touched += 1
+	return touched
+
+
+def _rename_location(doc, new_code):
+	"""Give a location a different code.
+
+	The code is part of the record's name — `01-A-01` — so changing it is a rename, not
+	an edit. Doing it properly is worth it: a shelf that has been relabelled should not
+	go on answering to the label painted over.
+	"""
+	new_code = (new_code or "").strip().upper()
+	if not new_code or new_code == doc.location_code:
+		return doc.name
+	if doc.is_unassigned:
+		frappe.throw(_("{0} is the system location of {1} and cannot be renamed.").format(
+			doc.name, doc.warehouse))
+	if new_code == UNASSIGNED_CODE:
+		frappe.throw(_("{0} is reserved for unassigned stock.").format(UNASSIGNED_CODE))
+	if frappe.db.exists("Warehouse Location", {
+		"warehouse": doc.warehouse, "location_code": new_code, "name": ["!=", doc.name],
+	}):
+		frappe.throw(_("{0} already has a location called {1}.").format(doc.warehouse, new_code))
+
+	old = doc.name
+	prefix = doc.warehouse_prefix or warehouse_prefix(doc.warehouse)
+	new = "{0}-{1}".format(prefix, new_code)
+	if new != old:
+		if frappe.db.exists("Warehouse Location", new):
+			frappe.throw(_("{0} already has a location called {1}.").format(doc.warehouse, new_code))
+		frappe.rename_doc("Warehouse Location", old, new, force=True, show_alert=False)
+	frappe.db.set_value("Warehouse Location", new, "location_code", new_code, update_modified=False)
+	_rename_in_allocations(old, new)
+
+	from isoft_warehouse_location_management.isoft_location_manager.api import log_activity
+
+	log_activity("Location", "Renamed", new, warehouse=doc.warehouse,
+		reference_type="Warehouse Location", message=_("{0} is now {1}").format(old, new))
+	return new
+
+
 @frappe.whitelist()
-def update_location(name, location_name=None, description=None, is_active=None):
+def update_location(name, location_name=None, description=None, is_active=None, location_code=None):
 	_require_manage()
 	doc = frappe.get_doc("Warehouse Location", name)
+	if location_code is not None:
+		# the rename comes first: everything below is written onto the record it leaves
+		name = _rename_location(doc, location_code)
+		doc = frappe.get_doc("Warehouse Location", name)
 	if location_name is not None:
 		# A location always answers to something, and the field is mandatory: blank falls
 		# back to its code, which is what creating one does.
@@ -1828,6 +1917,27 @@ def get_zones(warehouse=None, with_counts=1):
 	return zones
 
 
+def _rename_zone(doc, new_code):
+	"""Give a zone a different code, which is part of its name."""
+	new_code = (new_code or "").strip().upper()
+	if not new_code or new_code == doc.zone_code:
+		return doc.name
+	if frappe.db.exists("Warehouse Zone", {
+		"warehouse": doc.warehouse, "zone_code": new_code, "name": ["!=", doc.name],
+	}):
+		frappe.throw(_("{0} already has a zone called {1}.").format(doc.warehouse, new_code))
+
+	old = doc.name
+	prefix = doc.warehouse_prefix or warehouse_prefix(doc.warehouse)
+	new = "{0}-Z-{1}".format(prefix, new_code)
+	if new != old:
+		if frappe.db.exists("Warehouse Zone", new):
+			frappe.throw(_("{0} already has a zone called {1}.").format(doc.warehouse, new_code))
+		frappe.rename_doc("Warehouse Zone", old, new, force=True, show_alert=False)
+	frappe.db.set_value("Warehouse Zone", new, "zone_code", new_code, update_modified=False)
+	return new
+
+
 @frappe.whitelist()
 def save_zone(warehouse, zone_code, zone_name=None, description=None,
 		is_active=1, name=None):
@@ -1838,6 +1948,14 @@ def save_zone(warehouse, zone_code, zone_name=None, description=None,
 
 	if name and frappe.db.exists("Warehouse Zone", name):
 		doc = frappe.get_doc("Warehouse Zone", name)
+		# The code is part of the zone's name, and autoname only runs on insert — so
+		# changing the code on an existing zone used to leave the record answering to the
+		# old one. Renaming it properly keeps the two in step; the locations filed under
+		# it follow, because that is a Link.
+		code = (zone_code or "").strip().upper()
+		if code and code != doc.zone_code:
+			name = _rename_zone(doc, code)
+			doc = frappe.get_doc("Warehouse Zone", name)
 	else:
 		doc = frappe.new_doc("Warehouse Zone")
 		doc.warehouse = warehouse

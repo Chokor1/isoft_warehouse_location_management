@@ -621,9 +621,12 @@ isoft_warehouse_location_management.App = class {
 			const n = this.selection.size;
 			$bar.prop('hidden', !n).html(!n ? '' : `
 				<span class="ip-sel-count">${frappe.utils.escape_html(__('{0} selected', [n]))}</span>
+				<button class="ip-btn ip-btn-light ip-sel-zone"><i class="fa fa-th-large"></i>${
+					frappe.utils.escape_html(__('Move to zone'))}</button>
 				<button class="ip-btn ip-btn-ghost ip-sel-del"><i class="fa fa-trash-o"></i>${
 					frappe.utils.escape_html(__('Delete'))}</button>
 				<button class="ip-btn ip-btn-light ip-sel-clear">${frappe.utils.escape_html(__('Clear'))}</button>`);
+			$bar.find('.ip-sel-zone').on('click', () => this.zone_selected());
 			$bar.find('.ip-sel-del').on('click', () => this.delete_selected());
 			$bar.find('.ip-sel-clear').on('click', () => {
 				this.selection.clear();
@@ -640,6 +643,73 @@ isoft_warehouse_location_management.App = class {
 		// the checkbox is not a way of opening the location
 		$wrap.on('click', '.ip-pick-box', (e) => e.stopPropagation());
 		paint();
+	}
+
+	// Filing the selection under a zone.
+	//
+	// Filing is not a stock movement — the goods do not move, only the way the warehouse
+	// is described — so it is offered wherever locations are picked, and both views share
+	// one selection. A zone belongs to a single warehouse, so a selection spanning two
+	// says so rather than half-working.
+	zone_selected() {
+		const esc = frappe.utils.escape_html;
+		const names = Array.from(this.selection || []);
+		if (!names.length) return;
+		const picked = (this.allSecs || []).filter((x) => this.selection.has(x.location));
+		const warehouses = Array.from(new Set(picked.map((x) => x.warehouse).filter(Boolean)));
+		if (warehouses.length > 1) {
+			frappe.msgprint({
+				title: __('One warehouse at a time'),
+				message: __('A zone belongs to one warehouse, and this selection spans {0}: {1}. Pick locations from one of them.',
+					[warehouses.length, warehouses.join(', ')]),
+				indicator: 'orange',
+			});
+			return;
+		}
+		const wh = warehouses[0] || this.leaf_scope();
+		this.api('get_zones', { warehouse: wh, with_counts: 0 }).then((zs) => {
+			const zones = Array.isArray(zs) ? zs : [];
+			const d = new frappe.ui.Dialog({
+				title: __('Move to zone'),
+				fields: [
+					{ fieldtype: 'HTML', fieldname: 'what' },
+					{
+						fieldtype: 'Select', fieldname: 'zone', label: __('Zone'), reqd: 0,
+						options: [{ value: '', label: __('Not in a zone') }].concat(
+							zones.map((z) => ({ value: z.name, label: z.zone_name || z.zone_code }))),
+					},
+				],
+				primary_action_label: __('Move'),
+				primary_action: (values) => {
+					d.hide();
+					this.api('set_location_zone', {
+						locations: JSON.stringify(names), zone: values.zone || '',
+					}).then((r) => {
+						if (!r) return;
+						(r.problems || []).forEach((m) =>
+							frappe.msgprint({ message: m, indicator: 'orange' }));
+						if (r.moved) {
+							frappe.show_alert({
+								message: __('{0} location(s) filed', [r.moved]), indicator: 'green',
+							});
+						}
+						this.selection.clear();
+						if (this.paint_selbar) this.paint_selbar();
+						this.refresh_warehouse({ zones: true });
+					});
+				},
+			});
+			d.get_field('what').$wrapper.html(`<div class="ip-exp">
+				<div class="ip-exp-head">${esc(__('What this changes'))}</div>
+				<div class="ip-exp-line"><span>${esc(__('Locations'))}</span>
+					<b>${esc(names.length)}</b></div>
+				<div class="ip-exp-line"><span>${esc(__('Warehouse'))}</span>
+					<b>${esc(wh || __('—'))}</b></div>
+				<div class="ip-exp-line"><span>${esc(__('Stock'))}</span>
+					<b>${esc(__('stays exactly where it is'))}</b></div>
+			</div>`);
+			d.show();
+		});
 	}
 
 	delete_selected() {
@@ -1259,6 +1329,8 @@ isoft_warehouse_location_management.App = class {
 						<div class="ip-muted" style="font-size:12px;margin-top:6px">${esc(
 							__('Drag an item onto this column, or use Put away on the bar below.'))}</div></div>`}
 				<div class="ip-loc-settings">
+					${loc.is_unassigned ? '' : `<label>${esc(__('Code'))}
+						<input class="ip-input ip-loc-code" value="${esc(loc.location_code || '')}"></label>`}
 					<label>${esc(__('Name'))}
 						<input class="ip-input ip-loc-name" value="${esc(
 							loc.location_name && loc.location_name !== loc.location_code ? loc.location_name : '')}"
@@ -1366,11 +1438,16 @@ isoft_warehouse_location_management.App = class {
 			// with the other settings rather than being its own gesture
 			const zone = $body.find('.ip-loc-zone').val() || '';
 			const was_zone = (contents.location && contents.location.zone) || '';
+			// Changing the code renames the record, so everything after it has to use the
+			// name that comes back rather than the one this dialog was opened with.
+			const $code = $body.find('.ip-loc-code');
+			const code = $code.length ? ($code.val() || '').trim() : null;
 			const save_settings = () => this.api('update_location', {
 				name, location_name: label, description: desc, is_active: active,
-			}).then(() => (zone === was_zone
+				location_code: code,
+			}).then((renamed) => (zone === was_zone
 				? null
-				: this.api('set_location_zone', { locations: JSON.stringify([name]), zone: zone })
+				: this.api('set_location_zone', { locations: JSON.stringify([renamed || name]), zone: zone })
 					.then((r) => {
 						((r && r.problems) || []).forEach((msg) =>
 							frappe.msgprint({ message: msg, indicator: 'orange' }));
@@ -1632,7 +1709,7 @@ isoft_warehouse_location_management.App = class {
 					</tr></thead>
 					<tbody>${zones.length ? zones.map((z) => `
 						<tr data-name="${esc(z.name)}">
-							<td><b>${esc(z.zone_code)}</b></td>
+							<td><input class="ip-input ip-z-code-edit" value="${esc(z.zone_code)}"></td>
 							<td><input class="ip-input ip-z-name" value="${esc(z.zone_name || '')}"></td>
 							<td class="ip-muted">${esc(z.warehouse)}</td>
 							<td class="ip-muted">${esc(__('{0} filed', [cint(z.location_count)]))}</td>
@@ -1658,14 +1735,27 @@ isoft_warehouse_location_management.App = class {
 				}).then((r) => { if (r) load(); });
 			});
 
-			$body.find('.ip-z-name').on('change', (e) => {
+			// The code is part of the zone's name, so changing it renames the zone and the
+			// locations filed under it follow. Reload either way: a rename means the rows
+			// on screen are pointing at a record that has moved.
+			$body.find('.ip-z-name, .ip-z-code-edit').on('change', (e) => {
 				const $tr = $(e.currentTarget).closest('tr');
 				const z = zones.find((x) => x.name === $tr.data('name'));
 				if (!z) return;
+				const code = ($tr.find('.ip-z-code-edit').val() || '').trim();
+				if (!code) {
+					frappe.msgprint(__('A zone needs a code.'));
+					$tr.find('.ip-z-code-edit').val(z.zone_code);
+					return;
+				}
 				this.api('save_zone', {
-					name: z.name, warehouse: z.warehouse, zone_code: z.zone_code,
+					name: z.name, warehouse: z.warehouse, zone_code: code,
 					zone_name: $tr.find('.ip-z-name').val(),
-				}).then(() => frappe.show_alert({ message: __('Saved'), indicator: 'green' }));
+				}).then((r) => {
+					if (!r) return;
+					frappe.show_alert({ message: __('Saved'), indicator: 'green' });
+					if (r.name !== z.name) load();
+				});
 			});
 
 			$body.find('.ip-z-del').on('click', (e) => {
