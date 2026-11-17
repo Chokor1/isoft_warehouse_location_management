@@ -21,6 +21,8 @@
   "require_location_on_out",
   "allow_location_on_in",
   "enable_purchase",
+  "remove_empty_lines",
+  "show_empty_lines",
   "column_break_1",
   "theme_color",
   "enabled_section",
@@ -35,7 +37,7 @@
   },
   {
    "default": "1",
-   "description": "Master switch. Turn this off and the app stops touching anything \u2014 no location fields are required, no stock document is validated or mirrored, and the picking screens go read-only.",
+   "description": "Master switch. Turn this off and the app stops touching anything — no location fields are required, no stock document is validated or mirrored, and the picking screens go read-only.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enable Isoft Location Manager"
@@ -134,7 +136,21 @@
    "fieldname": "enable_purchase",
    "fieldtype": "Check",
    "label": "Locations on Purchase Receipt & Purchase Invoice",
-   "description": "Offer a put-away location on incoming purchases. Optional on every line \u2014 a line left blank lands in unassigned stock."
+   "description": "Offer a put-away location on incoming purchases. Optional on every line — a line left blank lands in unassigned stock."
+  },
+  {
+   "default": "0",
+   "description": "A line left at zero remembers that the item belongs on that shelf. Switched on, it is deleted the moment the last unit leaves, and the existing zero lines are cleared when these settings are saved.",
+   "fieldname": "remove_empty_lines",
+   "fieldtype": "Check",
+   "label": "Remove an Item From a Location When It Reaches Zero"
+  },
+  {
+   "default": "1",
+   "description": "Only matters while the setting above is off: it decides whether those zero lines are shown on the Locations board or kept out of sight.",
+   "fieldname": "show_empty_lines",
+   "fieldtype": "Check",
+   "label": "Show Items With No Quantity on the Board"
   },
   {
    "fieldname": "column_break_1",
@@ -169,7 +185,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-26 18:00:00.000000",
+ "modified": "2026-11-17 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Isoft Location Manager",
  "name": "Picking Settings",

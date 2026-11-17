@@ -3400,7 +3400,18 @@ isoft_warehouse_location_management.App = class {
 					], s)}
 				</div>
 
-				<div class="ip-card ip-fade" style="--i:3"><div class="ip-card-head"><h3>Enabled Warehouses</h3></div>
+				<div class="ip-card ip-fade" style="--i:3"><div class="ip-card-head"><h3>${__('Lines that have run to zero')}</h3></div>
+					<div class="ip-muted" style="font-size:12px;margin-bottom:10px">${__(
+						'When the last unit leaves a location, the line can stay at zero or go.')}</div>
+					${this._switches([
+						['remove_empty_lines', __('Remove the item from the location when it reaches zero'),
+						 __('A line left at zero remembers that the item belongs on that shelf, which is why it is kept by default. Switched on, it goes the moment the last unit leaves — and the zero lines already there are cleared when these settings are saved.')],
+						['show_empty_lines', __('Show items with no quantity on the board'),
+						 __('Only matters while the switch above is off. It decides whether those zero lines appear on the Locations board or are kept out of the way — the stock is the same either way.')],
+					], s)}
+				</div>
+
+				<div class="ip-card ip-fade" style="--i:4"><div class="ip-card-head"><h3>Enabled Warehouses</h3></div>
 					<div class="ip-muted" style="font-size:12px;margin-bottom:8px">${__('Only these warehouses (and their children) are used by Isoft Location Manager. Leave empty to enable all.')}</div>
 					<div class="ip-access-note">
 						<b>${__('Who can use Isoft Location Manager')}</b> ${__('is the Location Manager role, assigned on the User like any other role. Everyone else keeps working normally: locations still appear on the documents they already use.')}<br>

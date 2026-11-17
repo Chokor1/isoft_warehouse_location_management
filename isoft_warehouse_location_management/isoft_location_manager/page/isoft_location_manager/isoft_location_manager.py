@@ -9,6 +9,7 @@ from frappe.utils import cint, flt, getdate
 from isoft_warehouse_location_management.isoft_location_manager.api import (
 	is_warehouse_enabled,
 	natural_key,
+	setting,
 	sort_locations,
 	sort_zones,
 )
@@ -1031,6 +1032,10 @@ def get_locations_with_items(warehouse=None, search=None):
 	)
 	if scope is not None:
 		stock = [r for r in stock if r.warehouse in scope]
+	# A line at zero says the item belongs on that shelf but is not there now. Useful to
+	# some warehouses, clutter to others, so it is a setting rather than a rule.
+	if not setting("show_empty_lines"):
+		stock = [r for r in stock if abs(flt(r.qty)) > TOL]
 
 	barcodes = _barcodes_for([r.item_code for r in stock])
 	by_section = {}
@@ -1725,6 +1730,8 @@ SWITCHES = (
 	"allow_location_on_in",
 	"allow_pick_from_unassigned",
 	"require_location_on_out",
+	"remove_empty_lines",
+	"show_empty_lines",
 )
 
 
@@ -1772,6 +1779,11 @@ def save_settings(theme_color=None, stock_validation=None, default_warehouse=Non
 				doc.append("enabled_warehouses", {"warehouse": wh})
 	doc.flags.ignore_permissions = True
 	doc.save(ignore_permissions=True)
+	# Switching the rule on applies it to what is already there, rather than only to the
+	# lines that empty from now on — half a warehouse under each rule would be worse
+	# than either.
+	if cint(doc.remove_empty_lines):
+		frappe.db.sql("delete from `tabLocation Stock` where abs(qty) <= 0.000001")
 	return {"ok": True}
 
 

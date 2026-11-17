@@ -772,6 +772,21 @@ isoft_warehouse_location_management.mount_grid_split = function (frm, opts) {
 // new allocation, so the desk row form and the till render the same thing.
 //
 // build({candidates, chosen, line_qty, uom, readonly}) -> html
+// How the table adds up, in a form that can be recomputed without rebuilding the table.
+isoft_warehouse_location_management.pick_table_foot = function (candidates, chosen, line_qty) {
+	const fmt = isoft_warehouse_location_management.fmt;
+	const line = flt(line_qty);
+	const placed = (candidates || []).reduce((a, c) => a + flt((chosen || {})[c.location]), 0);
+	const diff = line - placed;
+	const state = Math.abs(diff) < 0.001 ? 'ok' : (diff > 0 ? 'short' : 'over');
+	return {
+		state: state,
+		note: state === 'ok'
+			? __('all {0} placed', [fmt(line)])
+			: (diff > 0 ? __('{0} still to place', [fmt(diff)]) : __('{0} too many', [fmt(-diff)])),
+	};
+};
+
 isoft_warehouse_location_management.pick_table_html = function (o) {
 	const esc = frappe.utils.escape_html;
 	const fmt = isoft_warehouse_location_management.fmt;
@@ -785,12 +800,9 @@ isoft_warehouse_location_management.pick_table_html = function (o) {
 			+ '</div>';
 	}
 
-	const placed = cands.reduce((a, c) => a + flt(chosen[c.location]), 0);
-	const diff = line - placed;
-	const state = Math.abs(diff) < 0.001 ? 'ok' : (diff > 0 ? 'short' : 'over');
-	const note = state === 'ok'
-		? __('all {0} placed', [fmt(line)])
-		: (diff > 0 ? __('{0} still to place', [fmt(diff)]) : __('{0} too many', [fmt(-diff)]));
+	const foot = isoft_warehouse_location_management.pick_table_foot(cands, chosen, line);
+	const state = foot.state;
+	const note = foot.note;
 
 	const rows = cands.map((c) => {
 		const qty = flt(chosen[c.location]);
@@ -904,8 +916,17 @@ isoft_warehouse_location_management.mount_split_button = function (opts) {
 			// never been saved, or one whose quantity moved after it was settled — opens
 			// on a fresh proposal, and that proposal is written onto the row, so the
 			// table, the column in the grid and the saved document all say the same thing.
+			//
+			// Except while the operator is in the middle of saying otherwise. Typing 4
+			// into a line of 10 makes the allocation stop adding up by definition — it is
+			// the first of two numbers — so re-proposing on that would hand the line
+			// straight back, which is what it used to do. The mark is kept against the
+			// quantity it was made for: change the line's quantity and the old split no
+			// longer applies, so the proposal takes over again.
+			const owned = row.__ip_pick_qty !== undefined
+				&& Math.abs(flt(row.__ip_pick_qty) - line_qty) < 0.001;
 			let use = stored;
-			if (!readonly && (!stored.length || Math.abs(placed - line_qty) > 0.001)) {
+			if (!readonly && !owned && (!stored.length || Math.abs(placed - line_qty) > 0.001)) {
 				use = isoft_warehouse_location_management.propose(where, line_qty, row.custom_from_location);
 				apply(use);
 			}
@@ -919,9 +940,19 @@ isoft_warehouse_location_management.mount_split_button = function (opts) {
 				readonly: readonly,
 			}) + '</div>');
 
-			$mount.find('.ip-pt-input').on('change', function () {
-				apply(isoft_warehouse_location_management.pick_table_read($mount));
-				offer();
+			// Only the line under the table is redrawn as you type. Rebuilding the table
+			// would replace the box being typed into, which loses both the caret and the
+			// half-finished number in it.
+			$mount.find('.ip-pt-input').on('input change', function () {
+				row.__ip_pick_qty = line_qty;
+				const rows = isoft_warehouse_location_management.pick_table_read($mount);
+				apply(rows);
+				const chosen_now = {};
+				rows.forEach((x) => { chosen_now[x.location] = flt(x.qty); });
+				const f = isoft_warehouse_location_management.pick_table_foot(where, chosen_now, line_qty);
+				$mount.find('.ip-pt-foot')
+					.attr('class', 'ip-pt-foot ip-pt-' + f.state)
+					.text(f.note);
 			});
 			$anchor.after($mount);
 		};

@@ -34,6 +34,9 @@ SETTING_DEFAULTS = {
 	"enable_purchase": True,
 	"allow_location_on_in": True,
 	"ask_when_ambiguous": True,
+	# a zero line remembers where an item belongs, so it is kept unless asked otherwise
+	"remove_empty_lines": False,
+	"show_empty_lines": True,
 }
 
 

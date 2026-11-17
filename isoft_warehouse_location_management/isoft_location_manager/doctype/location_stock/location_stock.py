@@ -15,6 +15,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
 
+from isoft_warehouse_location_management.isoft_location_manager.api import setting
 from isoft_warehouse_location_management.isoft_location_manager.doctype.warehouse_location.warehouse_location import (
 	get_unassigned_location,
 	is_unassigned,
@@ -136,6 +137,13 @@ def apply_delta(warehouse, location, item_code, delta):
 				location, flt(new_qty - delta), item_code, abs(delta)
 			)
 		)
+
+	# A line at zero is a shelf the item has been taken off. Keeping it is useful — it
+	# remembers that the item belongs there — so it is only removed when the setting asks
+	# for it. Every balance change in the app comes through here, so this is the one place
+	# that has to say it.
+	if abs(new_qty) <= 1e-9 and setting("remove_empty_lines"):
+		frappe.db.delete("Location Stock", {"name": name})
 
 
 def _create_balance_row(warehouse, location, item_code):
