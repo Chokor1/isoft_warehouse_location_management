@@ -235,8 +235,11 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 .ip-ti-change{border:0;background:none;color:var(--ip-muted);font-size:11px;cursor:pointer;text-decoration:underline;padding:0}
 .ip-ti-change:hover{color:var(--ip-primary)}
 .ip-col-tools{display:flex;align-items:center;gap:6px}
-.ip-col-edit{background:none;border:none;color:var(--ip-muted);cursor:pointer;padding:2px 4px;font-size:12px;border-radius:6px}
-.ip-col-edit:hover{color:var(--ip-primary);background:var(--ip-bg)}
+/* the whole card opens the location, so it says so when the pointer is on it — except
+   over the things that already mean something else */
+.ip-col.ip-openable .ip-col-head,.ip-col.ip-openable .ip-col-sub,
+.ip-col.ip-openable .ip-col-empty{cursor:pointer}
+.ip-col.ip-openable:hover .ip-col-title{color:var(--ip-primary)}
 .ip-col-sub{font-size:11px;color:var(--ip-muted);margin:4px 0 10px}
 .ip-col-body{display:flex;flex-direction:column;gap:8px;max-height:58vh;overflow:auto}
 .ip-cardlet{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--ip-bg);border:1px solid var(--ip-border);border-radius:10px;padding:10px 12px;transition:transform .12s}
@@ -521,10 +524,9 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 .ip-tile.is-empty { background: var(--ip-subtle); }
 .ip-tile-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .ip-tile-code { font-weight: 700; font-size: 12.5px; color: var(--ip-text); }
-.ip-tile-edit { border: 0; background: transparent; color: var(--ip-muted); cursor: pointer;
-  padding: 2px 4px; border-radius: 5px; opacity: 0; transition: opacity .15s, color .15s; }
-.ip-tile:hover .ip-tile-edit { opacity: 1; }
-.ip-tile-edit:hover { color: #0f766e; background: var(--ip-subtle); }
+/* the tile opens the location, as the card does in the other view */
+.ip-tile.ip-openable { cursor: pointer; }
+.ip-tile.ip-openable:hover .ip-tile-code { color: var(--ip-primary); }
 .ip-tile-del { border: 0; background: transparent; color: #cbd5e1; cursor: pointer;
   padding: 2px 4px; border-radius: 5px; opacity: 0; transition: opacity .15s, color .15s; }
 .ip-tile:hover .ip-tile-del { opacity: 1; }
@@ -1018,3 +1020,11 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 .ip-exp-line:last-child{border-bottom:0;padding-bottom:0}
 .ip-exp-line b{font-weight:600;color:var(--ip-text);text-align:right;min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ================= hide-empty toggles, and the location's own Export ================= */
+.ip-toggle{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:7px;
+  background:var(--ip-card);border:1px solid var(--ip-border-strong);font-size:12.5px;
+  color:var(--ip-text-2);cursor:pointer;white-space:nowrap;user-select:none}
+.ip-toggle:hover{border-color:var(--ip-primary);color:var(--ip-text)}
+.ip-toggle input{margin:0;flex:none;cursor:pointer}
+.ip-loc-actions{display:flex;justify-content:flex-end;margin:10px 0 -4px}

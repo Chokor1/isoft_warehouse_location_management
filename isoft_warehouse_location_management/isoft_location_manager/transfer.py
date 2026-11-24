@@ -963,15 +963,14 @@ def _cover_sheet(wb, lines, figures):
 	return ws
 
 
-@frappe.whitelist()
-def download_locations(warehouse=None, zone=None, search=None, hide_zero=1):
-	"""The Locations screen as it is on screen right now, as a workbook.
+def _locations_report(warehouse=None, zone=None, search=None, hide_zero=1, locations=None):
+	"""Everything both renderings need, gathered once.
 
-	`hide_zero` drops the lines a location holds nothing of. The board keeps showing
-	them — a shelf that an item has been emptied off is still that item's shelf, and
-	seeing the zero is how you know — but in a workbook they are rows to scroll past,
-	so they are left out unless they are asked for.
+	`locations` narrows it to a chosen few — the selection on the board, or the single
+	location whose form asked for it. Loose stock belongs to a warehouse rather than to
+	any location, so it is left out when the answer is about particular shelves.
 	"""
+	from isoft_warehouse_location_management.isoft_location_manager.api import natural_key
 	from isoft_warehouse_location_management.isoft_location_manager.page.isoft_location_manager.isoft_location_manager import (
 		_require_access,
 		_scope,
@@ -984,6 +983,8 @@ def download_locations(warehouse=None, zone=None, search=None, hide_zero=1):
 	search = (search or "").strip()
 	zone = (zone or "").strip()
 	hide_zero = cint(hide_zero)
+	chosen = frappe.parse_json(locations) if isinstance(locations, str) else locations
+	chosen = [c for c in (chosen or []) if c]
 
 	secs = get_locations_with_items(warehouse=warehouse, search=search)
 	zone_label = _("All zones")
@@ -994,7 +995,26 @@ def download_locations(warehouse=None, zone=None, search=None, hide_zero=1):
 		secs = [s for s in secs if s.get("zone") == zone]
 		zone_label = frappe.db.get_value("Warehouse Zone", zone, "zone_name") or zone
 
-	loose = get_unassigned(warehouse=warehouse, search=search, start=0, limit=100000)
+	if chosen:
+		picked = set(chosen)
+		secs = [s for s in secs if s.get("location") in picked]
+
+	# the board groups its columns by zone, naturally ordered, with the unfiled ones last;
+	# a sheet in a different order from the screen it was taken from is a sheet nobody
+	# trusts. sorted() is stable, so inside a zone the server's pick order survives.
+	secs = sorted(
+		secs,
+		key=lambda s: (
+			0 if s.get("zone") else 1,
+			natural_key(s.get("zone_name") or s.get("zone_code") or ""),
+		),
+	)
+
+	loose = (
+		{"items": []}
+		if chosen
+		else get_unassigned(warehouse=warehouse, search=search, start=0, limit=100000)
+	)
 
 	# one lookup for every unit of measure on the sheet, rather than one per row
 	codes = {i.get("item_code") for s in secs for i in s.get("items") or []}
@@ -1007,19 +1027,6 @@ def download_locations(warehouse=None, zone=None, search=None, hide_zero=1):
 				limit_page_length=0,
 			)
 		}
-
-	# the board groups its columns by zone, naturally ordered, with the unfiled ones last;
-	# a sheet in a different order from the screen it was taken from is a sheet nobody
-	# trusts. sorted() is stable, so inside a zone the server's pick order survives.
-	from isoft_warehouse_location_management.isoft_location_manager.api import natural_key
-
-	secs = sorted(
-		secs,
-		key=lambda s: (
-			0 if s.get("zone") else 1,
-			natural_key(s.get("zone_name") or s.get("zone_code") or ""),
-		),
-	)
 
 	no_zone = _("Not in a zone")
 	stock_rows, location_rows = [], []
@@ -1069,9 +1076,19 @@ def download_locations(warehouse=None, zone=None, search=None, hide_zero=1):
 		(_("Zone"), zone_label),
 		(_("Search"), search or _("Everything")),
 		(_("Empty lines"), _("Hidden") if hide_zero else _("Included")),
+	]
+	if chosen:
+		# not "Locations": the figures below already count those, and a cover with the
+		# same word against two different numbers is a cover nobody reads twice
+		asked.append((
+			_("Selection"),
+			chosen[0] if len(chosen) == 1 else _("{0} chosen on the board").format(len(chosen)),
+		))
+	asked += [
 		(_("Exported"), frappe.utils.format_datetime(frappe.utils.now())),
 		(_("By"), frappe.session.user),
 	]
+
 	shelved = sum(r["qty"] for r in stock_rows)
 	units_loose = sum(r["qty"] for r in loose_rows)
 	total_units = shelved + units_loose
@@ -1081,58 +1098,192 @@ def download_locations(warehouse=None, zone=None, search=None, hide_zero=1):
 		(_("Empty locations"), len([r for r in location_rows if not r["items"]]), INT_FORMAT),
 		(_("Lines on shelves"), len(stock_rows), INT_FORMAT),
 		(_("Units on shelves"), shelved, QTY_FORMAT),
-		(_("Items not put away"), len(loose_rows), INT_FORMAT),
-		(_("Units not put away"), units_loose, QTY_FORMAT),
-		(_("Put away"), (shelved / total_units) if total_units else 0, "0.0%"),
 	]
+	if not chosen:
+		figures += [
+			(_("Items not put away"), len(loose_rows), INT_FORMAT),
+			(_("Units not put away"), units_loose, QTY_FORMAT),
+			(_("Put away"), (shelved / total_units) if total_units else 0, "0.0%"),
+		]
 
-	subtitle = " · ".join(
-		"%s: %s" % (label, value) for label, value in asked if value not in (None, "")
-	)
+	return {
+		"asked": asked,
+		"figures": figures,
+		"stock_rows": stock_rows,
+		"location_rows": location_rows,
+		"loose_rows": loose_rows,
+		"by_location": bool(chosen),
+		"subtitle": " · ".join(
+			"%s: %s" % (label, value) for label, value in asked if value not in (None, "")
+		),
+	}
 
+
+STOCK_COLUMNS = (
+	# the item comes first and the place it is in follows the barcode: this sheet is
+	# read item by item, and the barcode is the last thing that identifies the item
+	{"label": "Warehouse", "key": "warehouse", "width": 26},
+	{"label": "Item", "key": "item_code", "width": 20},
+	{"label": "Item name", "key": "item_name", "width": 38},
+	{"label": "Barcode", "key": "barcode", "width": 18},
+	{"label": "Zone", "key": "zone", "width": 20},
+	{"label": "Location", "key": "code", "width": 16},
+	{"label": "Location name", "key": "name", "width": 26},
+	{"label": "Qty", "key": "qty", "width": 12, "fmt": QTY_FORMAT},
+	{"label": "UOM", "key": "uom", "width": 9},
+)
+
+LOCATION_COLUMNS = (
+	{"label": "Zone", "key": "zone", "width": 20},
+	{"label": "Location", "key": "code", "width": 16},
+	{"label": "Location name", "key": "name", "width": 26},
+	{"label": "Warehouse", "key": "warehouse", "width": 26},
+	{"label": "Items", "key": "items", "width": 10, "fmt": INT_FORMAT},
+	{"label": "Units", "key": "qty", "width": 14, "fmt": QTY_FORMAT},
+)
+
+LOOSE_COLUMNS = (
+	{"label": "Warehouse", "key": "warehouse", "width": 26},
+	{"label": "Item", "key": "item_code", "width": 20},
+	{"label": "Item name", "key": "item_name", "width": 38},
+	{"label": "Barcode", "key": "barcode", "width": 18},
+	{"label": "Qty", "key": "qty", "width": 12, "fmt": QTY_FORMAT},
+	{"label": "UOM", "key": "uom", "width": 9},
+)
+
+
+def _cols(spec):
+	"""The column spec with its labels translated at call time."""
+	return [dict(c, label=_(c["label"])) for c in spec]
+
+
+def _locations_workbook(data):
 	from openpyxl import Workbook
 
 	wb = Workbook()
-	_cover_sheet(wb, asked, figures)
-	_report_sheet(
-		wb, _("Stock by location"), subtitle,
-		# the item comes first and the place it is in follows the barcode: this sheet is
-		# read item by item, and the barcode is the last thing that identifies the item
-		[
-			{"label": _("Warehouse"), "key": "warehouse", "width": 26},
-			{"label": _("Item"), "key": "item_code", "width": 20},
-			{"label": _("Item name"), "key": "item_name", "width": 38},
-			{"label": _("Barcode"), "key": "barcode", "width": 18},
-			{"label": _("Zone"), "key": "zone", "width": 20},
-			{"label": _("Location"), "key": "code", "width": 16},
-			{"label": _("Location name"), "key": "name", "width": 26},
-			{"label": _("Qty"), "key": "qty", "width": 12, "fmt": QTY_FORMAT},
-			{"label": _("UOM"), "key": "uom", "width": 9},
-		],
-		stock_rows, tab_color="FF0F766E", total_label=_("Total"),
+	_cover_sheet(wb, data["asked"], data["figures"])
+	_report_sheet(wb, _("Stock by location"), data["subtitle"], _cols(STOCK_COLUMNS),
+		data["stock_rows"], tab_color="FF0F766E", total_label=_("Total"))
+	_report_sheet(wb, _("Locations"), data["subtitle"], _cols(LOCATION_COLUMNS),
+		data["location_rows"], tab_color="FF0EA5E9", total_label=_("Total"))
+	if not data["by_location"]:
+		_report_sheet(wb, _("Not put away"), data["subtitle"], _cols(LOOSE_COLUMNS),
+			data["loose_rows"], tab_color="FFB45309", total_label=_("Total"))
+	return wb
+
+
+def _pdf_table(title, columns, rows):
+	"""One table, as the page prints it: a heading, a ruled header and a total."""
+	esc = frappe.utils.escape_html
+
+	def cell(row, col):
+		value = row.get(col["key"])
+		if col.get("fmt"):
+			return frappe.format_value(flt(value), {"fieldtype": "Float", "precision": 3})
+		return esc(value or "")
+
+	if not rows:
+		return "<h2>{0}</h2><p class='none'>{1}</p>".format(esc(title), _("Nothing to show here."))
+
+	head = "".join(
+		"<th class='{0}'>{1}</th>".format("num" if c.get("fmt") else "", esc(c["label"]))
+		for c in columns
 	)
-	_report_sheet(
-		wb, _("Locations"), subtitle,
-		[
-			{"label": _("Zone"), "key": "zone", "width": 20},
-			{"label": _("Location"), "key": "code", "width": 16},
-			{"label": _("Location name"), "key": "name", "width": 26},
-			{"label": _("Warehouse"), "key": "warehouse", "width": 26},
-			{"label": _("Items"), "key": "items", "width": 10, "fmt": INT_FORMAT},
-			{"label": _("Units"), "key": "qty", "width": 14, "fmt": QTY_FORMAT},
-		],
-		location_rows, tab_color="FF0EA5E9", total_label=_("Total"),
+	body = "".join(
+		"<tr>{0}</tr>".format("".join(
+			"<td class='{0}'>{1}</td>".format("num" if c.get("fmt") else "", cell(r, c))
+			for c in columns
+		))
+		for r in rows
 	)
-	_report_sheet(
-		wb, _("Not put away"), subtitle,
-		[
-			{"label": _("Warehouse"), "key": "warehouse", "width": 26},
-			{"label": _("Item"), "key": "item_code", "width": 20},
-			{"label": _("Item name"), "key": "item_name", "width": 38},
-			{"label": _("Barcode"), "key": "barcode", "width": 18},
-			{"label": _("Qty"), "key": "qty", "width": 12, "fmt": QTY_FORMAT},
-			{"label": _("UOM"), "key": "uom", "width": 9},
-		],
-		loose_rows, tab_color="FFB45309", total_label=_("Total"),
+	foot = "".join(
+		"<td class='num'>{0}</td>".format(
+			frappe.format_value(sum(flt(r.get(c["key"])) for r in rows),
+				{"fieldtype": "Float", "precision": 3})
+		)
+		if c.get("fmt")
+		else "<td>{0}</td>".format(esc(_("Total")) if c is columns[0] else "")
+		for c in columns
 	)
-	_respond(wb, "ilm-locations-%s.xlsx" % frappe.utils.nowdate())
+	return (
+		"<h2>{title}</h2><table><thead><tr>{head}</tr></thead>"
+		"<tbody>{body}</tbody><tfoot><tr>{foot}</tr></tfoot></table>"
+	).format(title=esc(title), head=head, body=body, foot=foot)
+
+
+def _locations_html(data):
+	"""The same report as a page to read rather than a sheet to work in."""
+	esc = frappe.utils.escape_html
+	asked = "".join(
+		"<div><span>{0}</span><b>{1}</b></div>".format(esc(label), esc(value))
+		for label, value in data["asked"]
+	)
+	figures = "".join(
+		"<div><span>{0}</span><b>{1}</b></div>".format(
+			esc(label),
+			"{0:.1f}%".format(value * 100) if fmt == "0.0%"
+			else frappe.format_value(value, {"fieldtype": "Float", "precision": 0 if fmt == INT_FORMAT else 3}),
+		)
+		for label, value, fmt in data["figures"]
+	)
+	tables = _pdf_table(_("Stock by location"), _cols(STOCK_COLUMNS), data["stock_rows"])
+	tables += _pdf_table(_("Locations"), _cols(LOCATION_COLUMNS), data["location_rows"])
+	if not data["by_location"]:
+		tables += _pdf_table(_("Not put away"), _cols(LOOSE_COLUMNS), data["loose_rows"])
+
+	html = """<!doctype html><html><head><meta charset="utf-8"><style>
+		@page {{ margin: 12mm 10mm; }}
+		body {{ font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+			font-size: 8.5pt; color: #0f172a; }}
+		h1 {{ font-size: 15pt; margin: 0 0 2mm; }}
+		h2 {{ font-size: 11pt; margin: 6mm 0 2mm; padding-bottom: 1mm;
+			border-bottom: 1.2pt solid #0f766e; }}
+		.facts {{ display: flex; flex-wrap: wrap; gap: 0 6mm; margin-bottom: 4mm; }}
+		.facts > div {{ min-width: 52mm; padding: 1mm 0; border-bottom: .4pt solid #e2e8f0; }}
+		.facts span {{ color: #64748b; margin-right: 2mm; }}
+		table {{ width: 100%; border-collapse: collapse; }}
+		th {{ background: #0f766e; color: #fff; text-align: left; padding: 1.6mm 1.6mm;
+			font-size: 8pt; }}
+		td {{ padding: 1.4mm 1.6mm; border-bottom: .4pt solid #e2e8f0; }}
+		th.num, td.num {{ text-align: right; white-space: nowrap; }}
+		tfoot td {{ font-weight: 700; border-top: 1pt solid #0f766e; border-bottom: 0; }}
+		thead {{ display: table-header-group; }}
+		tr {{ page-break-inside: avoid; }}
+		.none {{ color: #64748b; font-style: italic; }}
+		.sub {{ color: #64748b; font-size: 7.5pt; margin-bottom: 4mm; }}
+	</style></head><body>
+		<h1>{title}</h1>
+		<div class="sub">{subtitle}</div>
+		<div class="facts">{asked}{figures}</div>
+		{tables}
+	</body></html>""".format(
+		title=esc(_("Warehouse locations")), subtitle=esc(data["subtitle"]),
+		asked=asked, figures=figures, tables=tables,
+	)
+
+	return html
+
+
+def _locations_pdf(data):
+	from frappe.utils.pdf import get_pdf
+
+	return get_pdf(_locations_html(data), {"orientation": "Landscape"})
+
+
+@frappe.whitelist()
+def download_locations(warehouse=None, zone=None, search=None, hide_zero=1, locations=None, fmt="xlsx"):
+	"""The Locations screen as it is on screen right now, as a workbook or a PDF.
+
+	`hide_zero` drops the lines a location holds nothing of. The board keeps showing
+	them — a shelf that an item has been emptied off is still that item's shelf, and
+	seeing the zero is how you know — but in a workbook they are rows to scroll past,
+	so they are left out unless they are asked for.
+	"""
+	data = _locations_report(warehouse, zone, search, hide_zero, locations)
+	stamp = frappe.utils.nowdate()
+	if (fmt or "xlsx").lower() == "pdf":
+		frappe.local.response.filename = "ilm-locations-%s.pdf" % stamp
+		frappe.local.response.filecontent = _locations_pdf(data)
+		frappe.local.response.type = "pdf"
+		return
+	_respond(_locations_workbook(data), "ilm-locations-%s.xlsx" % stamp)

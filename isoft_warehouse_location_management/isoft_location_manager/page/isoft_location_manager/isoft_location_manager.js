@@ -107,6 +107,9 @@ isoft_warehouse_location_management.App = class {
 		this.ctx = {};
 		this.scope = localStorage.getItem('ip_scope') || '';
 		this.whMode = 'explorer';
+		// both start off, and each user's last answer is remembered for them
+		this.hideEmptyLoc = this.recall('hide_empty_loc');
+		this.hideEmptyZone = this.recall('hide_empty_zone');
 		this.$body = $('<div class="ip-root"></div>').appendTo(page.main);
 		this.boot();
 	}
@@ -445,6 +448,12 @@ isoft_warehouse_location_management.App = class {
 						title="${esc(__('Show the zones and locations only'))}"><i class="fa fa-map-o"></i> ${esc(__('Layout'))}</button>
 				</div>
 				<select class="ip-input ip-zone-filter"><option value="">${esc(__('All zones'))}</option></select>
+				<label class="ip-toggle" title="${esc(__('Leave out locations that hold nothing'))}">
+					<input type="checkbox" class="ip-hide-empty-loc"${this.hideEmptyLoc ? ' checked' : ''}>
+					${esc(__('Hide empty locations'))}</label>
+				<label class="ip-toggle" title="${esc(__('Leave out zones whose locations all hold nothing'))}">
+					<input type="checkbox" class="ip-hide-empty-zone"${this.hideEmptyZone ? ' checked' : ''}>
+					${esc(__('Hide empty zones'))}</label>
 				<div class="ip-search"><i class="fa fa-search"></i>
 					<input class="ip-input ip-wh-search" placeholder="${esc(__('Search item, barcode or location…'))}" value="${esc(search)}"></div>
 				${this.ctx.can_manage ? '<div class="ip-selbar" hidden></div>' : ''}
@@ -476,6 +485,16 @@ isoft_warehouse_location_management.App = class {
 		this.$content.find('.ip-zone-filter').on('change', (e) => {
 			this.zoneFilter = e.target.value;
 			if (this.allSecs) this.paint_locations($wrap); else load();
+		});
+		this.$content.find('.ip-hide-empty-loc').on('change', (e) => {
+			this.hideEmptyLoc = e.target.checked;
+			this.remember('hide_empty_loc', this.hideEmptyLoc);
+			this.paint_locations($wrap);
+		});
+		this.$content.find('.ip-hide-empty-zone').on('change', (e) => {
+			this.hideEmptyZone = e.target.checked;
+			this.remember('hide_empty_zone', this.hideEmptyZone);
+			this.paint_locations($wrap);
 		});
 		this.$content.find('.ip-zones-btn').on('click', () => this.zones_dialog());
 		this.$content.find('.ip-move-btn').on('click', () => this.move_dialog());
@@ -561,6 +580,18 @@ isoft_warehouse_location_management.App = class {
 	// because a file that quietly ignored the filters would be read as the whole
 	// warehouse and filed as such. The cover sheet repeats all three, since a spreadsheet
 	// that has been mailed on no longer remembers where it came from.
+	// One place that turns a set of arguments into a download, so the board's Export and
+	// the one inside a location ask for the same report in the same way.
+	download_locations(args, label) {
+		const q = Object.keys(args)
+			.filter((k) => args[k] !== '' && args[k] !== undefined && args[k] !== null)
+			.map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(args[k]))
+			.join('&');
+		frappe.show_alert({ message: label || __('Building the file…'), indicator: 'blue' }, 3);
+		window.open('/api/method/isoft_warehouse_location_management.isoft_location_manager'
+			+ '.transfer.download_locations' + (q ? '?' + q : ''), '_blank');
+	}
+
 	export_locations() {
 		const esc = frappe.utils.escape_html;
 		const zone = this.zoneFilter === '__none__'
@@ -569,15 +600,28 @@ isoft_warehouse_location_management.App = class {
 				? ((this.zones || []).find((z) => z.name === this.zoneFilter) || {}).zone_name
 					|| this.zoneFilter
 				: __('All zones'));
+		// A selection on the board is the narrowest thing the operator has said, so it
+		// wins over the filters: they asked for these shelves.
+		const picked = Array.from(this.selection || []);
 		const what = [
 			[__('Warehouse'), this.scope || __('All warehouses you can see')],
 			[__('Zone'), zone],
 			[__('Search'), this.whSearch || __('Everything')],
 		];
+		if (picked.length) {
+			what.push([__('Locations'), __('{0} selected on the board', [picked.length])]);
+		}
 		const d = new frappe.ui.Dialog({
 			title: __('Export to Excel'),
 			fields: [
 				{ fieldtype: 'HTML', fieldname: 'what' },
+				{
+					fieldtype: 'Select', fieldname: 'fmt', label: __('Format'), default: 'xlsx',
+					options: [
+						{ value: 'xlsx', label: __('Excel workbook (.xlsx)') },
+						{ value: 'pdf', label: __('PDF') },
+					],
+				},
 				{
 					fieldtype: 'Check', fieldname: 'hide_zero', default: 1,
 					label: __('Leave out lines with no quantity'),
@@ -593,14 +637,11 @@ isoft_warehouse_location_management.App = class {
 					zone: this.zoneFilter || '',
 					search: this.whSearch || '',
 					hide_zero: values.hide_zero ? 1 : 0,
+					fmt: values.fmt || 'xlsx',
+					locations: picked.length ? JSON.stringify(picked) : '',
 				};
-				const q = Object.keys(args)
-					.filter((k) => args[k] !== '' && args[k] !== undefined)
-					.map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(args[k]))
-					.join('&');
-				frappe.show_alert({ message: __('Building the workbook…'), indicator: 'blue' }, 3);
-				window.open('/api/method/isoft_warehouse_location_management.isoft_location_manager'
-					+ '.transfer.download_locations' + (q ? '?' + q : ''), '_blank');
+				this.download_locations(args, args.fmt === 'pdf'
+					? __('Building the PDF…') : __('Building the workbook…'));
 			},
 		});
 		// the filters are named rather than assumed: a workbook taken from a filtered
@@ -1328,6 +1369,11 @@ isoft_warehouse_location_management.App = class {
 						<div>${esc(__('Nothing is kept here yet.'))}</div>
 						<div class="ip-muted" style="font-size:12px;margin-top:6px">${esc(
 							__('Drag an item onto this column, or use Put away on the bar below.'))}</div></div>`}
+				<div class="ip-loc-actions">
+					<button class="ip-btn ip-btn-light ip-loc-export" title="${esc(
+						__('Download what this location holds'))}"><i class="fa fa-download"></i> ${
+						esc(__('Export this location'))}</button>
+				</div>
 				<div class="ip-loc-settings">
 					${loc.is_unassigned ? '' : `<label>${esc(__('Code'))}
 						<input class="ip-input ip-loc-code" value="${esc(loc.location_code || '')}"></label>`}
@@ -1347,6 +1393,35 @@ isoft_warehouse_location_management.App = class {
 					<label class="ip-check"><input type="checkbox" class="ip-loc-active"
 						${loc.is_active ? 'checked' : ''}> ${esc(__('Active'))}</label>
 				</div>`);
+
+			// This location alone, in either format. It is the same report as the board's
+			// Export narrowed to one shelf, so the two can be read side by side.
+			$body.find('.ip-loc-export').on('click', () => {
+				const d2 = new frappe.ui.Dialog({
+					title: __('Export {0}', [loc.location_code || name]),
+					fields: [{
+						fieldtype: 'Select', fieldname: 'fmt', label: __('Format'), default: 'xlsx',
+						options: [
+							{ value: 'xlsx', label: __('Excel workbook (.xlsx)') },
+							{ value: 'pdf', label: __('PDF') },
+						],
+					}, {
+						fieldtype: 'Check', fieldname: 'hide_zero', default: 1,
+						label: __('Leave out lines with no quantity'),
+					}],
+					primary_action_label: __('Export'),
+					primary_action: (v) => {
+						d2.hide();
+						this.download_locations({
+							warehouse: loc.warehouse || '',
+							locations: JSON.stringify([name]),
+							hide_zero: v.hide_zero ? 1 : 0,
+							fmt: v.fmt || 'xlsx',
+						}, v.fmt === 'pdf' ? __('Building the PDF…') : __('Building the workbook…'));
+					},
+				});
+				d2.show();
+			});
 
 			$body.find('.ip-loc-return').on('click', (e) => {
 				const $row = $(e.currentTarget).closest('tr');
@@ -1497,10 +1572,35 @@ isoft_warehouse_location_management.App = class {
 	// Zone grouping is the same in both views: it is how the warehouse is described,
 	// not a property of one of them.
 	filtered_locations() {
-		const all = this.allSecs || [];
-		if (!this.zoneFilter) return all;
-		if (this.zoneFilter === '__none__') return all.filter((s) => !s.zone);
-		return all.filter((s) => s.zone === this.zoneFilter);
+		let all = this.allSecs || [];
+		if (this.zoneFilter === '__none__') all = all.filter((s) => !s.zone);
+		else if (this.zoneFilter) all = all.filter((s) => s.zone === this.zoneFilter);
+		// Empty means holding nothing, not listing nothing: a shelf whose only lines have
+		// run to zero is empty, however many of them it remembers.
+		if (this.hideEmptyLoc) all = all.filter((s) => flt(s.total_qty) > 0.000001);
+		return all;
+	}
+
+	// The zone groups a view should draw, with the empty ones left out when asked. A zone
+	// with no locations at all never reaches here — the groups are built from locations —
+	// so this is about zones whose locations are all empty.
+	visible_groups(secs) {
+		const groups = this.group_by_zone(secs);
+		if (!this.hideEmptyZone) return groups;
+		return groups.filter((g) => g.locations.some((s) => flt(s.total_qty) > 0.000001));
+	}
+
+	// A preference is this user's, and they may not be the only one at this machine.
+	remember(key, value) {
+		try {
+			localStorage.setItem('ip_' + key + ':' + frappe.session.user, value ? '1' : '0');
+		} catch (e) { /* private window, or storage full — the default still works */ }
+	}
+
+	recall(key) {
+		try {
+			return localStorage.getItem('ip_' + key + ':' + frappe.session.user) === '1';
+		} catch (e) { return false; }
 	}
 
 	// Locations grouped into zones, in display order, with the unfiled ones last —
@@ -1544,7 +1644,7 @@ isoft_warehouse_location_management.App = class {
 	render_layout($wrap, secs) {
 		const esc = frappe.utils.escape_html;
 		const manage = this.ctx.can_manage;
-		const groups = this.group_by_zone(secs);
+		const groups = this.visible_groups(secs);
 
 		$wrap.html(`<div class="ip-layout">${groups.map((g) => {
 			const units = g.locations.reduce((a, s) => a + flt(s.total_qty), 0);
@@ -1560,17 +1660,15 @@ isoft_warehouse_location_management.App = class {
 				</header>
 				<div class="ip-zone-body">${g.locations.map((s) => {
 					return `
-					<div class="ip-tile${flt(s.total_qty) ? '' : ' is-empty'}${manage ? ' ip-tile-move' : ''}"
-						${manage ? 'draggable="true"' : ''}
+					<div class="ip-tile${flt(s.total_qty) ? '' : ' is-empty'}${manage ? ' ip-tile-move ip-openable' : ''}"
+						${manage ? `draggable="true" title="${esc(__('Open this location'))}"` : ''}
 						data-location="${esc(s.location)}" data-wh="${esc(s.warehouse)}">
 						<div class="ip-tile-top">
 							<span class="ip-tile-code">${esc(s.location_name || s.location_code || s.location)}</span>
 							${manage ? `<label class="ip-pick-box" title="${esc(__('Select'))}">
 								<input type="checkbox" class="ip-pick" data-sec="${esc(s.location)}"
 									${this.selection && this.selection.has(s.location) ? 'checked' : ''}></label>` : ''}
-							${manage ? `<button class="ip-tile-edit" data-sec="${esc(s.location)}"
-								title="${esc(__('Edit this location'))}"><i class="fa fa-pencil"></i></button>
-								<button class="ip-tile-del" data-sec="${esc(s.location)}"
+							${manage ? `<button class="ip-tile-del" data-sec="${esc(s.location)}"
 								title="${esc(__('Delete this location'))}"><i class="fa fa-trash-o"></i></button>` : ''}
 						</div>
 						${s.location_name && s.location_name !== s.location_code
@@ -1583,10 +1681,11 @@ isoft_warehouse_location_management.App = class {
 					</div>`; }).join('')}</div>
 			</section>`; }).join('')}</div>`);
 
-		$wrap.find('.ip-tile-edit').on('click', (e) => {
-			e.stopPropagation();
-			const name = $(e.currentTarget).data('sec');
-			this.location_edit_dialog((this.allSecs || []).find((x) => x.location === name));
+		$wrap.on('click', '.ip-tile.ip-openable', (e) => {
+			if ($(e.target).closest('.ip-pick-box, .ip-tile-del').length) return;
+			const name = $(e.currentTarget).data('location');
+			const sec = (this.allSecs || []).find((x) => x.location === name);
+			if (sec) this.location_edit_dialog(sec);
 		});
 		$wrap.find('.ip-tile-del').on('click', (e) => {
 			e.stopPropagation();
@@ -1794,7 +1893,9 @@ isoft_warehouse_location_management.App = class {
 			const count = s.item_count != null ? s.item_count : s.items.length;
 			const hidden = count - (s.listed != null ? s.listed : s.items.length);
 			return `
-			<div class="ip-col ip-fade${s.is_unassigned ? ' ip-col-unassigned' : ''}"
+			<div class="ip-col ip-fade${s.is_unassigned ? ' ip-col-unassigned' : ''}${
+				manage && !s.is_unassigned ? ' ip-openable' : ''}"
+				${manage && !s.is_unassigned ? `title="${esc(__('Open this location'))}"` : ''}
 				style="--i:${i}" data-location="${esc(s.location)}" data-wh="${esc(s.warehouse)}">
 				<div class="ip-col-head">
 					<div class="ip-col-title">${esc(s.is_unassigned
@@ -1806,8 +1907,7 @@ isoft_warehouse_location_management.App = class {
 							<input type="checkbox" class="ip-pick" data-sec="${esc(s.location)}"
 								${this.selection && this.selection.has(s.location) ? 'checked' : ''}></label>` : ''}
 						${this.ctx.can_manage
-							? `<button class="ip-col-edit" data-sec="${esc(s.location)}" title="${esc(__('Edit this location'))}"><i class="fa fa-pencil"></i></button>
-							   <button class="ip-col-del" data-sec="${esc(s.location)}" title="${esc(__('Delete this location'))}"><i class="fa fa-trash-o"></i></button>`
+							? `<button class="ip-col-del" data-sec="${esc(s.location)}" title="${esc(__('Delete this location'))}"><i class="fa fa-trash-o"></i></button>`
 							: ''}
 					</div>
 				</div>
@@ -1835,7 +1935,7 @@ isoft_warehouse_location_management.App = class {
 		if (!zoned) {
 			$wrap.html(`<div class="ip-kanban">${secs.map(column).join('')}</div>`);
 		} else {
-			const groups = this.group_by_zone(secs);
+			const groups = this.visible_groups(secs);
 			$wrap.html(`<div class="ip-zoned">${groups.map((g) => `
 				<section class="ip-zonerow${g.zone ? '' : ' ip-zone-unfiled'}">
 					<header class="ip-zonerow-head">
@@ -1846,10 +1946,16 @@ isoft_warehouse_location_management.App = class {
 				</section>`).join('')}</div>`);
 		}
 
-		$wrap.find('.ip-col-edit').on('click', (e) => {
-			e.stopPropagation();
-			const name = $(e.currentTarget).data('sec');
-			this.location_edit_dialog(secs.find((x) => x.location === name));
+		// The card is the way in — a pencil in the corner of every column was a small
+		// target for the commonest thing there is to do here. Everything that already
+		// means something else is left alone: the item cards so they can still be
+		// dragged, the quantity so it can still be typed, the checkbox, the bin.
+		$wrap.on('click', '.ip-col.ip-openable', (e) => {
+			if ($(e.target).closest('.ip-cardlet, .ip-pick-box, .ip-col-del, .ip-col-more').length) return;
+			const name = $(e.currentTarget).data('location');
+			const sec = (secs || []).find((x) => x.location === name)
+				|| (this.allSecs || []).find((x) => x.location === name);
+			if (sec) this.location_edit_dialog(sec);
 		});
 		$wrap.find('.ip-col-del').on('click', (e) => {
 			e.stopPropagation();
