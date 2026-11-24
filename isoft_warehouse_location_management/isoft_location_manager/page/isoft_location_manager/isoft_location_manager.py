@@ -1594,6 +1594,91 @@ def item_placement(item_code, warehouse=None):
 
 
 @frappe.whitelist()
+def putaway_items(warehouse, to_location, items):
+	"""Put several loose items away on one shelf, as one movement.
+
+	A trolley of loose stock going onto a rack is one decision, not twelve, so the
+	ledger records it as one document. What is loose is read again here rather than
+	trusted from the screen: the dock may have been open a while, and somebody else may
+	have sold the very thing being put away. Whatever is still there moves, and the
+	lines that fell short say so instead of failing the lot.
+	"""
+	_require_preparer()
+	from isoft_warehouse_location_management.isoft_location_manager.doctype.location_stock.location_stock import (
+		unassigned_qty,
+	)
+
+	scope = _scope(None)
+	if scope is not None and warehouse not in scope:
+		frappe.throw(_("Warehouse {0} is not in your scope.").format(warehouse))
+	if not to_location:
+		frappe.throw(_("Choose where to put it."))
+
+	loc = frappe.db.get_value(
+		"Warehouse Location", to_location,
+		["warehouse", "is_unassigned", "is_active"], as_dict=True,
+	)
+	if not loc:
+		frappe.throw(_("Location {0} no longer exists.").format(to_location))
+	if loc.warehouse != warehouse:
+		frappe.throw(
+			_("Location {0} belongs to {1}, not to {2}.").format(to_location, loc.warehouse, warehouse)
+		)
+	if loc.is_unassigned:
+		frappe.throw(_("{0} is where loose stock already is — choose a shelf.").format(to_location))
+	if not loc.is_active:
+		frappe.throw(_("Location {0} is not active.").format(to_location))
+
+	unassigned = _unassigned_of(warehouse)
+	rows, problems = [], []
+	for r in (frappe.parse_json(items) if isinstance(items, str) else (items or [])):
+		code = (r.get("item_code") or "").strip()
+		want = flt(r.get("qty"))
+		if not code or want <= 0:
+			continue
+		loose = flt(unassigned_qty(warehouse, code))
+		take = min(want, loose)
+		if take <= TOL:
+			problems.append(_("{0} has nothing loose in {1} any more.").format(code, warehouse))
+			continue
+		if take + TOL < want:
+			problems.append(
+				_("{0}: only {1} was still loose, so that is what moved.").format(code, flt(take))
+			)
+		rows.append({
+			"item_code": code, "qty": take,
+			"source_location": unassigned, "target_location": to_location,
+		})
+
+	if not rows:
+		return {
+			"ok": False, "moved": 0, "items": 0,
+			"problems": problems or [_("Nothing to put away.")],
+		}
+
+	doc = frappe.get_doc({
+		"doctype": "Location Stock Movement",
+		"entry_type": "Stock In",
+		"warehouse": warehouse,
+		"posting_date": frappe.utils.nowdate(),
+		"remarks": _("Put away from the unassigned bar"),
+		"items": rows,
+	})
+	doc.flags.ignore_permissions = True
+	doc.insert(ignore_permissions=True)
+	doc.submit()
+
+	return {
+		"ok": not problems,
+		"movement": doc.name,
+		"items": len(rows),
+		"moved": sum(flt(r["qty"]) for r in rows),
+		"to_location": to_location,
+		"problems": problems,
+	}
+
+
+@frappe.whitelist()
 def move_item(warehouse, item_code, to_location, rows, remarks=None):
 	"""Move one item from one or more locations into another, in a single document.
 

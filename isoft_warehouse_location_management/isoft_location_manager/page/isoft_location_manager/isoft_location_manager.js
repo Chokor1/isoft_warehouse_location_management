@@ -2140,6 +2140,10 @@ isoft_warehouse_location_management.App = class {
 								<input class="ip-input ip-dock-search" autocomplete="off"
 									placeholder="${esc(__('Search item or scan a barcode…'))}"
 									value="${esc(this.dock ? this.dock.search : (this.whSearch || ''))}"></div>
+							<label class="ip-dock-all" title="${esc(__('Select everything shown here'))}">
+								<input type="checkbox" class="ip-dock-selall">
+								${esc(__('Select all'))}</label>
+							<div class="ip-dock-selbar" hidden></div>
 							<div class="ip-dock-tip"><i class="fa fa-hand-rock-o"></i>
 								${esc(__('Drag an item onto a location to put it away'))}</div>
 							<button class="ip-dock-close" type="button" title="${esc(__('Close'))}">&times;</button>
@@ -2152,7 +2156,13 @@ isoft_warehouse_location_management.App = class {
 		this.$dock = $dock;
 		$('body').addClass('ip-has-dock');
 		const $scroll = $dock.find('.ip-dock-scroll');
-		this.dock = { start: 0, search: this.whSearch || '', rows: [], open: open };
+		// The same item can be loose in two warehouses, so a row is the pair of them. The
+		// key is never written into the DOM — a separator safe in a string is not
+		// necessarily safe in an attribute — so the card carries the two halves it is
+		// already carrying anyway and the key is built from those.
+		const key = (it) => (it.warehouse || '') + '\u0000' + (it.item_code || '');
+		const card_key = ($card) => key({ warehouse: $card.attr('data-wh'), item_code: $card.attr('data-item') });
+		this.dock = { start: 0, search: this.whSearch || '', rows: [], open: open, picked: new Set() };
 
 		// --- keep it aligned to the page, not to the window ---
 		const place = () => {
@@ -2216,7 +2226,12 @@ isoft_warehouse_location_management.App = class {
 					</div>
 					<div class="ip-dock-card-side">
 						<div class="ip-dock-card-qty">${format_number(it.qty)}<span>${esc(it.stock_uom || '')}</span></div>
-						<button class="ip-dock-put" type="button">${esc(__('Put away'))}</button>
+						<div class="ip-dock-card-acts">
+							<label class="ip-pick-box" draggable="false" title="${esc(__('Select'))}">
+								<input type="checkbox" class="ip-dock-pick"
+									${this.dock.picked && this.dock.picked.has(key(it)) ? 'checked' : ''}></label>
+							<button class="ip-dock-put" type="button">${esc(__('Put away'))}</button>
+						</div>
 					</div>
 				</div>`).join('');
 
@@ -2257,6 +2272,7 @@ isoft_warehouse_location_management.App = class {
 				});
 			});
 			$scroll.find('.ip-dock-more').on('click', () => load(true));
+			paint_picked();
 			sync_height();
 		};
 
@@ -2292,6 +2308,64 @@ isoft_warehouse_location_management.App = class {
 				if (this.dock.open) render_rows(); else sync_height();
 			});
 		};
+
+		// ---- picking several at once ------------------------------------
+		// Dragging is for one card; a trolley of forty is a different gesture. The rows
+		// that can be picked are the ones on screen, so the bar says how many that is
+		// rather than implying it has the whole warehouse in hand.
+		const picked_rows = () => (this.dock.rows || []).filter((it) => this.dock.picked.has(key(it)));
+
+		const self = this;
+		const paint_picked = () => {
+			const rows = picked_rows();
+			const $bar = $dock.find('.ip-dock-selbar');
+			const $all = $dock.find('.ip-dock-selall');
+            const shown = (this.dock.rows || []).length;
+			$all.prop('checked', shown > 0 && rows.length === shown);
+			$all.prop('indeterminate', rows.length > 0 && rows.length < shown);
+			$dock.find('.ip-dock-card').each(function () {
+				const $c = $(this);
+				const on = self.dock.picked.has(card_key($c));
+				$c.find('.ip-dock-pick').prop('checked', on);
+				$c.toggleClass('is-picked', on);
+			});
+			if (!rows.length) { $bar.prop('hidden', true).empty(); return; }
+			const units = rows.reduce((a, r) => a + flt(r.qty), 0);
+			$bar.prop('hidden', false).html(`
+				<span class="ip-sel-count">${frappe.utils.escape_html(
+					__('{0} selected · {1} units', [rows.length, format_number(units)]))}</span>
+				<button class="ip-btn ip-btn-primary ip-dock-putall" type="button">
+					<i class="fa fa-sign-in"></i> ${frappe.utils.escape_html(__('Put away together'))}</button>
+				<button class="ip-btn ip-btn-light ip-dock-selclear" type="button">${
+					frappe.utils.escape_html(__('Clear'))}</button>`);
+		};
+		this._dock_paint_picked = paint_picked;
+
+		$dock.on('change', '.ip-dock-pick', (e) => {
+			const k = card_key($(e.currentTarget).closest('.ip-dock-card'));
+			if (e.currentTarget.checked) this.dock.picked.add(k); else this.dock.picked.delete(k);
+			paint_picked();
+		});
+		// a checkbox inside a draggable card must not start a drag
+		$dock.on('mousedown click', '.ip-dock-card .ip-pick-box', (e) => e.stopPropagation());
+		$dock.on('dragstart', '.ip-dock-card .ip-pick-box', (e) => { e.preventDefault(); e.stopPropagation(); });
+
+		$dock.on('change', '.ip-dock-selall', (e) => {
+			const on = e.currentTarget.checked;
+			(this.dock.rows || []).forEach((it) => {
+				if (on) this.dock.picked.add(key(it)); else this.dock.picked.delete(key(it));
+			});
+			paint_picked();
+		});
+		$dock.on('click', '.ip-dock-selclear', (e) => {
+			e.stopPropagation();
+			this.dock.picked.clear();
+			paint_picked();
+		});
+		$dock.on('click', '.ip-dock-putall', (e) => {
+			e.stopPropagation();
+			this.putaway_selected(picked_rows());
+		});
 
 		$dock.find('.ip-dock-handle').on('click', () => user_set_open(!$dock.hasClass('is-open')));
 		// its own box, for narrowing inside the loose stock without disturbing the board
@@ -2335,6 +2409,76 @@ isoft_warehouse_location_management.App = class {
 		$(document).off('mousedown.ipdock touchstart.ipdock');
 		$('body').removeClass('ip-has-dock');
 		this.$dock = null;
+	}
+
+	// Putting the picked loose stock away on one shelf.
+	//
+	// A location belongs to one warehouse, so a selection spanning two cannot land on
+	// one shelf — it says so rather than putting half of it away. Everything picked goes
+	// in whole: the dock's number is what is loose, and "put this lot on that rack" is
+	// the thing being asked for. The server reads the loose quantities again as it
+	// writes, so anything sold in the meantime is reported rather than invented.
+	putaway_selected(rows) {
+		const esc = frappe.utils.escape_html;
+		if (!rows || !rows.length) return;
+		const warehouses = Array.from(new Set(rows.map((r) => r.warehouse).filter(Boolean)));
+		if (warehouses.length > 1) {
+			frappe.msgprint({
+				title: __('One warehouse at a time'),
+				message: __('A location belongs to one warehouse, and this selection spans {0}: {1}. Narrow the bar to one of them, or pick within it.',
+					[warehouses.length, warehouses.join(', ')]),
+				indicator: 'orange',
+			});
+			return;
+		}
+		const warehouse = warehouses[0];
+		const units = rows.reduce((a, r) => a + flt(r.qty), 0);
+		const d = new frappe.ui.Dialog({
+			title: __('Put away {0} item(s)', [rows.length]),
+			fields: [
+				{ fieldtype: 'HTML', fieldname: 'what' },
+				{
+					fieldtype: 'Link', fieldname: 'location', label: __('Location'),
+					options: 'Warehouse Location', reqd: 1,
+					get_query: () => ({
+						filters: { warehouse: warehouse, is_active: 1, is_unassigned: 0 },
+					}),
+				},
+			],
+			primary_action_label: __('Put away'),
+			primary_action: (values) => {
+				d.hide();
+				this.api('putaway_items', {
+					warehouse: warehouse,
+					to_location: values.location,
+					items: JSON.stringify(rows.map((r) => ({ item_code: r.item_code, qty: flt(r.qty) }))),
+				}).then((r) => {
+					if (!r) return;
+					(r.problems || []).forEach((m) => frappe.msgprint({ message: m, indicator: 'orange' }));
+					if (r.items) {
+						frappe.show_alert({
+							message: __('{0} item(s), {1} units, put away in {2}',
+								[r.items, format_number(r.moved), r.to_location]),
+							indicator: 'green',
+						});
+					}
+					if (this.dock) this.dock.picked.clear();
+					this.refresh_warehouse({ dock: true });
+				});
+			},
+		});
+		const list = rows.slice(0, 8).map((r) => `<div class="ip-exp-line">
+			<span>${esc(r.item_code)}</span><b>${format_number(r.qty)} ${esc(r.stock_uom || '')}</b></div>`).join('');
+		d.get_field('what').$wrapper.html(`<div class="ip-exp">
+			<div class="ip-exp-head">${esc(__('All of it goes onto the shelf you choose'))}</div>
+			<div class="ip-exp-line"><span>${esc(__('Warehouse'))}</span><b>${esc(warehouse)}</b></div>
+			<div class="ip-exp-line"><span>${esc(__('Items'))}</span><b>${rows.length}</b></div>
+			<div class="ip-exp-line"><span>${esc(__('Units'))}</span><b>${format_number(units)}</b></div>
+		</div>
+		<div class="ip-exp" style="margin-top:8px">${list}${rows.length > 8
+			? `<div class="ip-exp-line"><span>${esc(__('and {0} more', [rows.length - 8]))}</span><b></b></div>`
+			: ''}</div>`);
+		d.show();
 	}
 
 	ask_putaway(ctx) {

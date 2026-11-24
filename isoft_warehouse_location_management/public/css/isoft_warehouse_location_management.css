@@ -1047,3 +1047,14 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 .ip-locform .ip-loc-note{flex:0 0 auto}
 .ip-locform .ip-loc-settings{flex:0 0 auto}
 @media (max-height:720px){.ip-locform{max-height:76vh}}
+
+/* ================= picking several loose items at once ================= */
+.ip-dock-all{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--ip-text-2);
+  cursor:pointer;white-space:nowrap;user-select:none;flex:none}
+.ip-dock-all input{margin:0;cursor:pointer}
+.ip-dock-selbar{display:flex;align-items:center;gap:8px;padding:4px 6px 4px 12px;border-radius:9px;
+  background:var(--ip-card);border:1px solid var(--ip-border-strong);flex:none}
+.ip-dock-selbar .ip-btn{padding:5px 11px;font-size:12px}
+.ip-dock-card-acts{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.ip-dock-card .ip-pick-box{margin:0}
+.ip-dock-card.is-picked{border-color:var(--ip-primary);box-shadow:0 0 0 1px var(--ip-primary) inset}
