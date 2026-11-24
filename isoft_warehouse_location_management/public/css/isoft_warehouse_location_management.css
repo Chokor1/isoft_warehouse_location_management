@@ -1049,6 +1049,9 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
 @media (max-height:720px){.ip-locform{max-height:76vh}}
 
 /* ================= picking several loose items at once ================= */
+.ip-dock-size-wrap{display:inline-flex;align-items:center;gap:7px;font-size:12px;
+  color:var(--ip-muted);white-space:nowrap;flex:none}
+.ip-dock-size{padding:5px 26px 5px 9px;font-size:12px}
 .ip-dock-all{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--ip-text-2);
   cursor:pointer;white-space:nowrap;user-select:none;flex:none}
 .ip-dock-all input{margin:0;cursor:pointer}

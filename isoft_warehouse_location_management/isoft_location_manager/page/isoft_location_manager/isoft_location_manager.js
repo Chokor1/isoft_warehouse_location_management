@@ -5,6 +5,11 @@
 
 frappe.provide('isoft_warehouse_location_management');
 
+// "All" of the loose stock, expressed as a page size so the paging stays one path.
+// On the namespace rather than a bare const: desk scripts share one scope, and a stray
+// top-level declaration that collides takes the whole bundle down with it.
+isoft_warehouse_location_management.ALL_LOOSE = 100000;
+
 isoft_warehouse_location_management.THEMES = {
 	Blue: { p: '#2563eb', d: '#1e40af', a: '#3b82f6' },
 	Green: { p: '#059669', d: '#047857', a: '#10b981' },
@@ -1606,6 +1611,20 @@ isoft_warehouse_location_management.App = class {
 		return groups.filter((g) => g.locations.some((s) => flt(s.total_qty) > 0.000001));
 	}
 
+	// How many loose rows to fetch at a time. A hundred is enough to work from without
+	// making the bar feel like a page load; "All" is for the rare moment somebody wants
+	// the lot, and is a number rather than a special case so the paging code stays one
+	// path. Remembered per user, like the other choices on this screen.
+	dock_size() {
+		let n = 0;
+		try { n = cint(localStorage.getItem('ip_dock_size:' + frappe.session.user)); } catch (e) { n = 0; }
+		return n > 0 ? n : 100;
+	}
+
+	remember_dock_size(n) {
+		try { localStorage.setItem('ip_dock_size:' + frappe.session.user, cint(n)); } catch (e) { /* no storage */ }
+	}
+
 	// A preference is this user's, and they may not be the only one at this machine.
 	remember(key, value) {
 		try {
@@ -2140,6 +2159,14 @@ isoft_warehouse_location_management.App = class {
 								<input class="ip-input ip-dock-search" autocomplete="off"
 									placeholder="${esc(__('Search item or scan a barcode…'))}"
 									value="${esc(this.dock ? this.dock.search : (this.whSearch || ''))}"></div>
+							<label class="ip-dock-size-wrap" title="${esc(__('How many to load at a time'))}">
+								${esc(__('Show'))}
+								<span class="ip-sel"><select class="ip-input ip-dock-size">
+									${[50, 100, 200, 500].map((n) => `<option value="${n}"${
+										n === this.dock_size() ? ' selected' : ''}>${n}</option>`).join('')}
+									<option value="0"${this.dock_size() >= isoft_warehouse_location_management.ALL_LOOSE ? ' selected' : ''}>${
+										esc(__('All'))}</option>
+								</select><i class="fa fa-angle-down"></i></span></label>
 							<label class="ip-dock-all" title="${esc(__('Select everything shown here'))}">
 								<input type="checkbox" class="ip-dock-selall">
 								${esc(__('Select all'))}</label>
@@ -2162,7 +2189,10 @@ isoft_warehouse_location_management.App = class {
 		// already carrying anyway and the key is built from those.
 		const key = (it) => (it.warehouse || '') + '\u0000' + (it.item_code || '');
 		const card_key = ($card) => key({ warehouse: $card.attr('data-wh'), item_code: $card.attr('data-item') });
-		this.dock = { start: 0, search: this.whSearch || '', rows: [], open: open, picked: new Set() };
+		this.dock = {
+			start: 0, search: this.whSearch || '', rows: [], open: open,
+			picked: new Set(), size: this.dock_size(),
+		};
 
 		// --- keep it aligned to the page, not to the window ---
 		const place = () => {
@@ -2285,7 +2315,7 @@ isoft_warehouse_location_management.App = class {
 				warehouse: this.scope,
 				search: this.dock.search,
 				start: this.dock.start,
-				limit: 40,
+				limit: this.dock.size || this.dock_size(),
 				counts_only: shut ? 1 : 0,
 			}).then((r) => {
 				if (!r) return;
@@ -2349,6 +2379,17 @@ isoft_warehouse_location_management.App = class {
 		// a checkbox inside a draggable card must not start a drag
 		$dock.on('mousedown click', '.ip-dock-card .ip-pick-box', (e) => e.stopPropagation());
 		$dock.on('dragstart', '.ip-dock-card .ip-pick-box', (e) => { e.preventDefault(); e.stopPropagation(); });
+
+		// A different page size is a different page: start again from the top rather than
+		// appending a second helping of a different length onto the first.
+		$dock.on('change', '.ip-dock-size', (e) => {
+			const n = cint(e.target.value);
+			this.dock.size = n > 0 ? n : isoft_warehouse_location_management.ALL_LOOSE;
+			this.remember_dock_size(this.dock.size);
+			this.dock.picked.clear();
+			load();
+		});
+		$dock.on('click', '.ip-dock-size-wrap', (e) => e.stopPropagation());
 
 		$dock.on('change', '.ip-dock-selall', (e) => {
 			const on = e.currentTarget.checked;
