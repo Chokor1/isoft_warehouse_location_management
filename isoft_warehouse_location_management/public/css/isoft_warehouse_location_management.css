@@ -1027,4 +1027,23 @@ body.ip-sb-collapsed .ip-scope{cursor:pointer}
   color:var(--ip-text-2);cursor:pointer;white-space:nowrap;user-select:none}
 .ip-toggle:hover{border-color:var(--ip-primary);color:var(--ip-text)}
 .ip-toggle input{margin:0;flex:none;cursor:pointer}
-.ip-loc-actions{display:flex;justify-content:flex-end;margin:10px 0 -4px}
+/* The location form is a frame of a fixed height: the head, the search, the note and
+   the settings hold their place and only the table scrolls, so a shelf with sixty lines
+   on it reads the same as one with three — and Apply never walks off the bottom. */
+/* a cap, not a fixed height: a shelf with three lines on it gets a small dialog, a
+   shelf with sixty gets this one, and neither makes the modal itself scroll */
+.ip-locform{display:flex;flex-direction:column;max-height:min(72vh,640px)}
+.ip-locform .ip-loc-head{flex:0 0 auto;align-items:flex-end}
+.ip-loc-headtools{margin-left:auto;display:flex;align-items:center;gap:8px}
+.ip-loc-headtools .ip-sel select{padding-right:26px}
+.ip-loc-count{font-size:19px;font-weight:800;color:var(--ip-text);font-variant-numeric:tabular-nums}
+.ip-loc-findbox{flex:0 0 auto;margin-bottom:10px}
+.ip-loc-findbox .ip-input{width:100%;min-width:0}
+.ip-loc-scroll{flex:1 1 auto;min-height:0;overflow:auto;margin:0 -4px;padding:0 4px}
+/* the header stays put inside the scroller, so the columns are always named */
+.ip-loc-scroll .ip-loc-table thead th{position:sticky;top:0;z-index:2;background:var(--ip-card);
+  box-shadow:inset 0 -1px 0 var(--ip-border-strong)}
+.ip-loc-none{padding:18px 2px;font-size:12.5px;color:var(--ip-muted);font-style:italic}
+.ip-locform .ip-loc-note{flex:0 0 auto}
+.ip-locform .ip-loc-settings{flex:0 0 auto}
+@media (max-height:720px){.ip-locform{max-height:76vh}}

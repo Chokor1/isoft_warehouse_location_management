@@ -1313,6 +1313,7 @@ isoft_warehouse_location_management.App = class {
 				<td>
 					<div class="ip-ti-code">${esc(it.item_code)}</div>
 					<div class="ip-ti-name">${esc(it.item_name || '')}</div>
+					${it.barcode ? `<div class="ip-barcode"><i class="fa fa-barcode"></i>${esc(it.barcode)}</div>` : ''}
 				</td>
 				<td style="width:150px">
 					<input type="number" class="ip-input ip-loc-qty" step="any" min="0"
@@ -1347,33 +1348,50 @@ isoft_warehouse_location_management.App = class {
 				d.get_primary_btn().hide();
 				return;
 			}
+			// The frame is a fixed height and only the table inside it scrolls, so the
+			// things you act on — what it holds, the export, the settings, Apply — stay
+			// where they are however many items the shelf carries.
 			$body.html(`
-				<div class="ip-loc-head">
-					<div><label>${esc(__('Warehouse'))}</label><div>${esc(loc.warehouse)}</div></div>
-					<div><label>${esc(__('Type'))}</label><div>${esc(loc.location_type || '—')}</div></div>
-					<div><label>${esc(__('Holding'))}</label>
-						<div class="ip-loc-total">${format_number(contents.total_qty)}</div></div>
-				</div>
-				${contents.items.length ? `
-					<table class="ip-table ip-loc-table">
-						<thead><tr>
-							<th>${esc(__('Item'))}</th>
-							<th>${esc(__('This location holds'))}</th>
-							<th>${esc(__('Pick location'))}</th>
-						</tr></thead>
-						<tbody>${rows_html()}</tbody>
-					</table>
-					<div class="ip-loc-note">${esc(__(
-						'Lower a quantity and the difference returns to unassigned stock. Raise it and it is taken from there — so a location can never claim more than the warehouse holds.'))}</div>`
-					: `<div class="ip-empty-lg"><i class="fa fa-inbox"></i>
-						<div>${esc(__('Nothing is kept here yet.'))}</div>
-						<div class="ip-muted" style="font-size:12px;margin-top:6px">${esc(
-							__('Drag an item onto this column, or use Put away on the bar below.'))}</div></div>`}
-				<div class="ip-loc-actions">
-					<button class="ip-btn ip-btn-light ip-loc-export" title="${esc(
-						__('Download what this location holds'))}"><i class="fa fa-download"></i> ${
-						esc(__('Export this location'))}</button>
-				</div>
+				<div class="ip-locform">
+					<div class="ip-loc-head">
+						<div><label>${esc(__('Warehouse'))}</label><div>${esc(loc.warehouse)}</div></div>
+						<div><label>${esc(__('Type'))}</label><div>${esc(loc.location_type || '—')}</div></div>
+						<div><label>${esc(__('Items'))}</label>
+							<div class="ip-loc-count">${contents.items.length}</div></div>
+						<div><label>${esc(__('Holding'))}</label>
+							<div class="ip-loc-total">${format_number(contents.total_qty)}</div></div>
+						<div class="ip-loc-headtools">
+							<span class="ip-sel"><select class="ip-input ip-loc-fmt">
+								<option value="xlsx">${esc(__('Excel'))}</option>
+								<option value="pdf">${esc(__('PDF'))}</option>
+							</select><i class="fa fa-angle-down"></i></span>
+							<button class="ip-btn ip-btn-light ip-loc-export" title="${esc(
+								__('Download what this location holds, as it is listed here'))}"><i
+								class="fa fa-download"></i> ${esc(__('Export'))}</button>
+						</div>
+					</div>
+					${contents.items.length > 7 ? `<div class="ip-search ip-loc-findbox">
+						<i class="fa fa-search"></i>
+						<input class="ip-input ip-loc-find" autocomplete="off"
+							placeholder="${esc(__('Find an item on this shelf…'))}"></div>` : ''}
+					<div class="ip-loc-scroll">
+						${contents.items.length ? `
+							<table class="ip-table ip-loc-table">
+								<thead><tr>
+									<th>${esc(__('Item'))}</th>
+									<th>${esc(__('This location holds'))}</th>
+									<th>${esc(__('Pick location'))}</th>
+								</tr></thead>
+								<tbody>${rows_html()}</tbody>
+							</table>
+							<div class="ip-loc-none" hidden>${esc(__('No item here matches that.'))}</div>`
+							: `<div class="ip-empty-lg"><i class="fa fa-inbox"></i>
+								<div>${esc(__('Nothing is kept here yet.'))}</div>
+								<div class="ip-muted" style="font-size:12px;margin-top:6px">${esc(
+									__('Drag an item onto this column, or use Put away on the bar below.'))}</div></div>`}
+					</div>
+					${contents.items.length ? `<div class="ip-loc-note">${esc(__(
+						'Lower a quantity and the difference returns to unassigned stock. Raise it and it is taken from there — so a location can never claim more than the warehouse holds.'))}</div>` : ''}
 				<div class="ip-loc-settings">
 					${loc.is_unassigned ? '' : `<label>${esc(__('Code'))}
 						<input class="ip-input ip-loc-code" value="${esc(loc.location_code || '')}"></label>`}
@@ -1392,35 +1410,33 @@ isoft_warehouse_location_management.App = class {
 						</select></label>
 					<label class="ip-check"><input type="checkbox" class="ip-loc-active"
 						${loc.is_active ? 'checked' : ''}> ${esc(__('Active'))}</label>
-				</div>`);
+				</div></div>`);
 
-			// This location alone, in either format. It is the same report as the board's
-			// Export narrowed to one shelf, so the two can be read side by side.
-			$body.find('.ip-loc-export').on('click', () => {
-				const d2 = new frappe.ui.Dialog({
-					title: __('Export {0}', [loc.location_code || name]),
-					fields: [{
-						fieldtype: 'Select', fieldname: 'fmt', label: __('Format'), default: 'xlsx',
-						options: [
-							{ value: 'xlsx', label: __('Excel workbook (.xlsx)') },
-							{ value: 'pdf', label: __('PDF') },
-						],
-					}, {
-						fieldtype: 'Check', fieldname: 'hide_zero', default: 1,
-						label: __('Leave out lines with no quantity'),
-					}],
-					primary_action_label: __('Export'),
-					primary_action: (v) => {
-						d2.hide();
-						this.download_locations({
-							warehouse: loc.warehouse || '',
-							locations: JSON.stringify([name]),
-							hide_zero: v.hide_zero ? 1 : 0,
-							fmt: v.fmt || 'xlsx',
-						}, v.fmt === 'pdf' ? __('Building the PDF…') : __('Building the workbook…'));
-					},
+			// A shelf with sixty lines on it is a list to search, not to scroll.
+			$body.find('.ip-loc-find').on('input', (e) => {
+				const q = (e.target.value || '').trim().toLowerCase();
+				let shown = 0;
+				$body.find('.ip-loc-table tbody tr').each(function () {
+					const hit = !q || $(this).text().toLowerCase().indexOf(q) !== -1;
+					$(this).toggle(hit);
+					if (hit) shown += 1;
 				});
-				d2.show();
+				$body.find('.ip-loc-none').prop('hidden', !!shown);
+			});
+
+			// This location alone, in the format chosen beside the button. The one thing
+			// it needs to be asked is already on screen, so asking it again in a dialog
+			// of its own would only be a second click. Empty lines are kept: the table
+			// above lists them, and a file that disagreed with the screen it came from
+			// would be the wrong file.
+			$body.find('.ip-loc-export').on('click', () => {
+				const fmt = $body.find('.ip-loc-fmt').val() || 'xlsx';
+				this.download_locations({
+					warehouse: loc.warehouse || '',
+					locations: JSON.stringify([name]),
+					hide_zero: 0,
+					fmt: fmt,
+				}, fmt === 'pdf' ? __('Building the PDF…') : __('Building the workbook…'));
 			});
 
 			$body.find('.ip-loc-return').on('click', (e) => {

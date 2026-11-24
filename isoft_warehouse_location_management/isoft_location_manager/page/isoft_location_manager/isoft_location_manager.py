@@ -746,7 +746,18 @@ def get_location_contents(location):
 		order_by="qty desc, item_code asc",
 		limit_page_length=0,
 	)
-	defaults = _item_defaults(loc.warehouse, [r.item_code for r in rows])
+	codes = [r.item_code for r in rows]
+	defaults = _item_defaults(loc.warehouse, codes)
+	# one query each for the units and the barcodes, not one per line: this is the screen
+	# people open on the shelf that holds the most
+	uoms = {
+		i.name: i.stock_uom
+		for i in frappe.get_all(
+			"Item", filters={"name": ["in", codes]}, fields=["name", "stock_uom"],
+			limit_page_length=0,
+		)
+	} if codes else {}
+	barcodes = _barcodes_for(codes)
 	items = []
 	for r in rows:
 		held = flt(r.qty)
@@ -756,7 +767,8 @@ def get_location_contents(location):
 				"item_code": r.item_code,
 				"item_name": r.item_name,
 				"qty": held,
-				"uom": frappe.db.get_value("Item", r.item_code, "stock_uom"),
+				"uom": uoms.get(r.item_code),
+				"barcode": barcodes.get(r.item_code),
 				# how much more this shelf could take without breaking the partition
 				"loose": unassigned_qty(loc.warehouse, r.item_code),
 				# where this item says it is picked from. There is no put-away equivalent:
